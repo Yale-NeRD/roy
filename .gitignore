@@ -1,0 +1,5 @@
+*.code-workspace
+
+# python related
+*.pyc
+__pycache__
