@@ -1,5 +1,6 @@
 import roy_shmem
 import inspect
+import pickle
 
 class SharedMemorySingleton:
     _instance = None
@@ -93,7 +94,8 @@ class RemoteProxy:
                 raise KeyError()
             return attr
         except KeyError:
-            raise AttributeError(f"{super(type(self.instance))} object has no attribute '{name}'")
+            raise AttributeError(
+                f"{super(type(self.instance))} object has no attribute '{name}'")
 
     def set_attribute_to_shmem(self, name, value):
         print(f"__setattr__({name}, '{value}')")
@@ -104,6 +106,10 @@ class RemoteProxy:
             # self.instance.__dict__[name] = value
             if not callable(value):
                 self.shared_memory.write(f"{self.key}.{name}", value)
+            else:
+                # pickle the function and send it to the shared memory
+                serialized_function = pickle.dumps(value)
+                self.shared_memory.write(f"{self.key}.{name}", serialized_function)
 
 # for @remote decorator
 def remote(obj):
