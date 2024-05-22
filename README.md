@@ -1,4 +1,7 @@
-# Roy, a Ray-like Python library centering around distributed shared memory
+# Roy: a Python library for distributed shared memory
+Roy enables shared memory between multiple processes.
+- Core Roy library is written in Rust.
+
 ## How to run
 ```bash
 make
