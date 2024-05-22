@@ -44,14 +44,14 @@ class TestMultipleClients:
             assert my_instance.value == "new_value"
 
         def client_2(my_instance):
-            print(my_instance)
-            print(my_instance.key)
-            print(my_instance.value)
-            # assert my_instance.value == "new_value"
+            # print(my_instance)
+            # print(my_instance.key)
+            # print(my_instance.value)
+            assert my_instance.value == "new_value"
 
         client_process = multiprocessing.Process(target=client_1, args=(my_instance,))
         client_process.start()
-        time.sleep(2)
+        time.sleep(1)
         client_process = multiprocessing.Process(target=client_2, args=(my_instance,))
         client_process.start()
 
