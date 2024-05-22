@@ -126,6 +126,7 @@ impl SharedMemoryServer {
                         }
                     };
                     let response_bytes = bincode::serialize(&response).unwrap();
+                    println!("Sent response: {:?}", response);
                     socket.send_to(&response_bytes, client_addr)?;
                 },
                 Opcode::Write => {
@@ -147,6 +148,7 @@ impl SharedMemoryServer {
                     locked_data.insert(key_value[0].to_string(), new_state);
                     let response = Message { opcode: Opcode::WriteResp, body: "OK".to_string() };
                     let response_bytes = bincode::serialize(&response).unwrap();
+                    println!("Sent response: {:?}", response);
                     socket.send_to(&response_bytes, client_addr)?;
                 },
                 _ => {

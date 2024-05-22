@@ -101,7 +101,7 @@ class RemoteProxy:
             setattr(self, name, value)
         else:
             # TODO: add support for functions
-            self.instance.__dict__[name] = value
+            # self.instance.__dict__[name] = value
             if not callable(value):
                 self.shared_memory.write(f"{self.key}.{name}", value)
 

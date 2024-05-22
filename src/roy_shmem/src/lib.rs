@@ -67,9 +67,9 @@ impl SharedMemory {
         println!("Reading from key: {}", key);
         let mut data = self.data.lock().unwrap();
         // TODO: check the cache state if it is safe to use this value
-        if data.contains_key(&key) {
-            return Ok(data.get(&key).cloned());
-        }
+        // if data.contains_key(&key) {
+        //     return Ok(data.get(&key).cloned());
+        // }
         if self.server_connection.is_none() {
             return Err(PyValueError::new_err("Server connection not initialized"));
         }
