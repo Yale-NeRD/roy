@@ -57,13 +57,13 @@ impl SharedMemoryServer {
         return Ok(());
     }
 
-    pub fn check_server_status(&self) -> bool {
-        *self.running.read().unwrap()
-    }
+    // pub fn check_server_status(&self) -> bool {
+    //     *self.running.read().unwrap()
+    // }
 
-    pub fn terminate_server(&self) {
-        *self.running.write().unwrap() = false;
-    }
+    // pub fn terminate_server(&self) {
+    //     *self.running.write().unwrap() = false;
+    // }
 
     fn serve_messages(
         data: Arc<Mutex<HashMap<String, MemoryState>>>,
@@ -99,30 +99,30 @@ impl SharedMemoryServer {
             match request.opcode {
                 // Control messages
                 Opcode::Init => {
-                    println!("Received INIT message with body: {}", request.body);
-                    let response = Message { opcode: Opcode::Ack, body: "OK".to_string() };
+                    println!("Received INIT message with handle: {}", request.handle);
+                    let response = Message { opcode: Opcode::Ack, handle: "".to_string(), data: Some("OK".to_string()) };
                     let response_bytes = bincode::serialize(&response).unwrap();
                     socket.send_to(&response_bytes, client_addr)?;
                 },
                 Opcode::Term => {
-                    println!("Received TERMINATE message with body: {}", request.body);
+                    println!("Received TERMINATE message with handle: {}", request.handle);
                     *running.write().unwrap() = false;
                     break;
                 },
                 // Data messages
                 Opcode::Read => {
-                    println!("Received READ message with body: {}", request.body);
+                    println!("Received READ message with handle: {}", request.handle);
                     let data = data.lock().unwrap();
-                    let response = match data.get(&request.body) {
+                    let response = match data.get(&request.handle) {
                         Some(state) => {
                             if state.data.is_some() {
-                                Message { opcode: Opcode::ReadResp, body: state.data.clone().unwrap() }
+                                Message { opcode: Opcode::ReadResp, handle: request.handle, data: Some(state.data.clone().unwrap()) }
                             } else {
-                                Message { opcode: Opcode::ReadNack, body: "Key not found".to_string() }
+                                Message { opcode: Opcode::ReadNack, handle: request.handle, data: Some("Key not found".to_string()) }
                             }
                         },
                         None => {
-                            Message { opcode: Opcode::ReadNack, body: "Key not found".to_string() }
+                            Message { opcode: Opcode::ReadNack, handle: request.handle, data: Some("Key not found".to_string()) }
                         }
                     };
                     let response_bytes = bincode::serialize(&response).unwrap();
@@ -130,23 +130,26 @@ impl SharedMemoryServer {
                     socket.send_to(&response_bytes, client_addr)?;
                 },
                 Opcode::Write => {
-                    println!("Received WRITE message with body: {}", request.body);
-                    let key_value: Vec<&str> = request.body.split(':').collect();
-                    if key_value.len() != 2 {
-                        // send ReadNack
-                        let response = Message { opcode: Opcode::WriteNack, body: "Invalid key-value pair".to_string() };
-                        let response_bytes = bincode::serialize(&response).unwrap();
-                        socket.send_to(&response_bytes, client_addr)?;
-                        continue;
-                    }
+                    println!("Received WRITE message with handle: {}", request.handle);
+                    let handle = request.handle.clone();
+                    let new_data = match request.data {
+                        Some(new_data) => new_data,
+                        None => {
+                            // send WriteNack
+                            let response = Message { opcode: Opcode::WriteNack, handle: request.handle, data: Some("Invalid data to insert".to_string()) };
+                            let response_bytes = bincode::serialize(&response).unwrap();
+                            socket.send_to(&response_bytes, client_addr)?;
+                            continue;
+                        }
+                    };
                     let mut locked_data = data.lock().unwrap();
                     // insert new key-value pair
                     let new_state = MemoryState {
-                        data: Some(key_value[1].to_string()),
+                        data: Some(new_data.clone()),
                         state: CacheState::Modified
                     };
-                    locked_data.insert(key_value[0].to_string(), new_state);
-                    let response = Message { opcode: Opcode::WriteResp, body: "OK".to_string() };
+                    locked_data.insert(handle, new_state);
+                    let response = Message { opcode: Opcode::WriteResp, handle: request.handle, data: None };
                     let response_bytes = bincode::serialize(&response).unwrap();
                     println!("Sent response: {:?}", response);
                     socket.send_to(&response_bytes, client_addr)?;

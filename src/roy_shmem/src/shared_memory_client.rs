@@ -42,7 +42,7 @@ impl SharedMemoryClient {
     
         // TODO: send a message to the server to initialize the connection
         // Send initialization message
-        self.send_message(Opcode::Init, "Init message")?;
+        self.send_message(Opcode::Init, "Init message", None)?;
         println!("Waiting for response from server");
 
         // Wait for response
@@ -54,21 +54,20 @@ impl SharedMemoryClient {
     }
 
     pub fn send_terminate_message(&self) -> Result<(), std::io::Error> {
-        self.send_message(Opcode::Term, "Terminate message")
+        self.send_message(Opcode::Term, "Terminate message", None)
     }
 
     pub fn read_data(&self, key: &str) -> Result<String, std::io::Error> {
-        self.send_message(Opcode::Read, key)?;
+        self.send_message(Opcode::Read, key, None)?;
         let msg = self.recv_message()?;
-        if msg.opcode != Opcode::ReadResp {
+        if msg.opcode != Opcode::ReadResp || !msg.data.is_some(){
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
         }
-        Ok(msg.body)
+        Ok(msg.data.unwrap())
     }
 
     pub fn write_data(&self, key: &str, value: &str) -> Result<(), std::io::Error> {
-        let msg = format!("{}:{}", key, value);
-        self.send_message(Opcode::Write, &msg)?;
+        self.send_message(Opcode::Write, key, Some(value))?;
         let resp = self.recv_message()?;
         if resp.opcode != Opcode::WriteResp {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
@@ -76,11 +75,12 @@ impl SharedMemoryClient {
         Ok(())
     }
 
-    fn send_message(&self, opcode: Opcode, msg: &str) -> Result<(), std::io::Error> {
+    fn send_message(&self, opcode: Opcode, handle: &str, data: Option<&str>) -> Result<(), std::io::Error> {
         let socket = self.socket.as_ref().unwrap();
         let message = Message {
             opcode: opcode,
-            body: msg.to_string(),
+            handle: handle.to_string(),
+            data: data.map(|s| s.to_string()),
         };
         let message_bytes = bincode::serialize(&message).unwrap();
         socket.send(&message_bytes)?;

@@ -115,6 +115,7 @@ class RemoteProxy:
 
 def get_remote_handle(object_name, handle=None):
     # get the name of object if handle is None
+    # TODO: check with the server to retrieve a new handle
     return f"{ROY_FUNCTION_PREFIX}.{object_name}" if handle is None else handle
 
 def remote_decorator(obj, handle=None):
