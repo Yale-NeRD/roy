@@ -1,6 +1,7 @@
 import pytest
 import multiprocessing
-from roy import remote, connect, start_server, stop_server, SharedMemorySingleton
+import roy
+from roy import connect, start_server, stop_server, SharedMemorySingleton
 import time
 
 ip_addr_str = "127.0.0.1:50016"
@@ -28,13 +29,13 @@ class TestMultipleClients:
         connect(ip_addr_str)
 
     def test_my_class(self):
-        @remote
+        @roy.remote
         class TestClass:
-            def __init__(self, value):
-                self.value = value
-        my_instance = TestClass("initial_value")
-
-        def client_1(my_instance):
+            def __init__(self, value=None):
+                if value is not None:
+                    self.value = value
+        def client_1():
+            my_instance = TestClass("initial_value")
             assert str(my_instance) != ""
             assert my_instance.value == "initial_value"
             my_instance.value = "new_value"
@@ -43,17 +44,19 @@ class TestMultipleClients:
                 my_instance.non_existing_value
             assert my_instance.value == "new_value"
 
-        def client_2(my_instance):
+        def client_2():
+            my_instance = TestClass()
             # print(my_instance)
             # print(my_instance.key)
             # print(my_instance.value)
             assert my_instance.value == "new_value"
 
-        client_process = multiprocessing.Process(target=client_1, args=(my_instance,))
+        client_process = multiprocessing.Process(target=client_1,)
         client_process.start()
-        time.sleep(1)
-        client_process = multiprocessing.Process(target=client_2, args=(my_instance,))
+        time.sleep(2)
+        client_process = multiprocessing.Process(target=client_2)
         client_process.start()
+        time.sleep(2)
 
 if __name__ == '__main__':
     pytest.main()

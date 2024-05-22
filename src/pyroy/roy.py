@@ -2,6 +2,8 @@ import roy_shmem
 import inspect
 import pickle
 
+ROY_FUNCTION_PREFIX = "roy_ftn"
+
 class SharedMemorySingleton:
     _instance = None
     def __new__(cls):
@@ -111,24 +113,31 @@ class RemoteProxy:
                 serialized_function = pickle.dumps(value)
                 self.shared_memory.write(f"{self.key}.{name}", serialized_function)
 
-# for @remote decorator
-def remote(obj):
+def get_remote_handle(object_name, handle=None):
+    # get the name of object if handle is None
+    return f"{ROY_FUNCTION_PREFIX}.{object_name}" if handle is None else handle
+
+def remote_decorator(obj, handle=None):
     if inspect.isfunction(obj):
         def wrapped_function(*args, **kwargs):
             shared_memory = SharedMemorySingleton()
-            key = str(id(wrapped_function))
+            handle = get_remote_handle(obj.__name__, wrapped_function)
             result = obj(*args, **kwargs)
-            shared_memory.write(key, result)
+            shared_memory.write(handle, result)
             return result
         return wrapped_function
 
     elif inspect.isclass(obj):
         class WrappedClass(obj):
             def __init__(self, *args, **kwargs):
+                print("Obj: ", obj.__name__)
                 # setup remote proxy
-                key = str(id(self))
+                nonlocal handle # from remote
+                # TODO: Debug:: currently we do not allow user-specified handle
+                assert handle is None
+                handle = get_remote_handle(obj.__name__)
                 # set remote_proxy
-                self.remote_proxy = RemoteProxy(key, self)
+                self.remote_proxy = RemoteProxy(key=handle, instance=self)
                 print("remote_proxy.dict: ", self.remote_proxy.__dict__)
                 # initialize the class. Any attribute set inside the class
                 # will be set in the shared memory
@@ -148,9 +157,31 @@ def remote(obj):
                 else:
                     return self.remote_proxy.get_attribute_from_shmem(name)
         return WrappedClass
-
     else:
         raise TypeError("Unsupported type for @remote decorator")
+
+# def remote(obj=None, *, handle: str = None):
+#     # error nothing has been specified
+#     if obj is None and handle is None:
+#         raise ValueError("Nothing has been specified for @remote decorator")
+
+#     # for the case the user specifies the handle, e.g., @remote(handle="TestClass"),
+#     # so there is no object to decorate
+#     if obj is None and handle is not None:
+#         # return new decorator with the given handle embedded
+#         def remote_decorator_wrapper(obj):
+#             return remote_decorator(obj, handle)
+#         return remote_decorator_wrapper
+#     # if there is an object to decorate,
+#     # e.g., @remote def test_class: ...
+#     else:
+#         return remote_decorator(obj, handle)
+
+def remote(obj):
+    return remote_decorator(obj, None)
+
+def get_remote(handle: str):
+    return SharedMemorySingleton().read(handle)
 
 # connect to the server
 def connect(server_address: str = "127.0.0.1:50015"):
