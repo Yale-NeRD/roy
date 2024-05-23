@@ -63,6 +63,43 @@ impl SharedMemory {
         Ok(())
     }
 
+    fn get_next_availble_handle(&self, handle: String) -> PyResult<String> {
+        if self.server_connection.is_none() {
+            return Err(PyValueError::new_err("Server connection not initialized"));
+        }
+        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+        let handle = socket.get_next_availble_handle(&handle)?;
+        Ok(handle)
+    }
+
+    // def set_remote_handle(handle: str, instance):
+    //     SharedMemorySingleton().set_handle_object(handle, pickle.dumps(instance))
+    fn set_handle_object(&self, handle: String, instance: Vec<u8>) -> PyResult<()> {
+        if self.server_connection.is_none() {
+            return Err(PyValueError::new_err("Server connection not initialized"));
+        }
+
+        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+        let res = socket.write_data_bytes(&handle, &instance);
+        if res.is_err() {
+            return Err(PyValueError::new_err(res.unwrap_err().to_string()));
+        }
+        Ok(())
+    }
+
+    fn get_handle_object(&self, handle: String) -> PyResult<Option<Vec<u8>>> {
+        if self.server_connection.is_none() {
+            return Err(PyValueError::new_err("Server connection not initialized"));
+        }
+
+        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+        let res = socket.read_data_bytes(&handle);
+        match res {
+            Ok(data) => Ok(Some(data)),
+            Err(_) => Ok(None),
+        }
+    }
+
     fn read(&self, key: String) -> PyResult<Option<String>> {
         println!("Reading from key: {}", key);
         let mut data = self.data.lock().unwrap();

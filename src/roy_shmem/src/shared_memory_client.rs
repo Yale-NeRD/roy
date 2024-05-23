@@ -48,7 +48,10 @@ impl SharedMemoryClient {
         // Wait for response
         let msg = self.recv_message()?;
         if msg.opcode != Opcode::Ack {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
+            return Err(
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData, 
+                    "Invalid response"));
         }
         return Ok(());
     }
@@ -58,15 +61,33 @@ impl SharedMemoryClient {
     }
 
     pub fn read_data(&self, key: &str) -> Result<String, std::io::Error> {
+        self.read_data_bytes(key).and_then(|data| {
+            match String::from_utf8(data) {
+                Ok(s) => Ok(s),
+                Err(_) => Err(
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Data is not valid UTF-8")),
+            }
+        })
+    }
+
+    pub fn read_data_bytes(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
         self.send_message(Opcode::Read, key, None)?;
         let msg = self.recv_message()?;
         if msg.opcode != Opcode::ReadResp || !msg.data.is_some(){
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid response"));
         }
         Ok(msg.data.unwrap())
     }
 
     pub fn write_data(&self, key: &str, value: &str) -> Result<(), std::io::Error> {
+        self.write_data_bytes(key, &value.as_bytes().to_vec())
+    }
+
+    pub fn write_data_bytes(&self, key: &str, value: &Vec<u8>) -> Result<(), std::io::Error> {
         self.send_message(Opcode::Write, key, Some(value))?;
         let resp = self.recv_message()?;
         if resp.opcode != Opcode::WriteResp {
@@ -75,12 +96,24 @@ impl SharedMemoryClient {
         Ok(())
     }
 
-    fn send_message(&self, opcode: Opcode, handle: &str, data: Option<&str>) -> Result<(), std::io::Error> {
+    pub fn get_next_availble_handle(&self, handle: &str) -> Result<String, std::io::Error> {
+        self.send_message(Opcode::NewHandle, handle, None)?;
+        let msg = self.recv_message()?;
+        if msg.opcode != Opcode::NewHandleResp || !msg.data.is_some() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
+        }
+        match String::from_utf8(msg.data.unwrap()) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Data is not valid UTF-8")),
+        }
+    }
+
+    fn send_message(&self, opcode: Opcode, handle: &str, data: Option<&Vec<u8>>) -> Result<(), std::io::Error> {
         let socket = self.socket.as_ref().unwrap();
         let message = Message {
             opcode: opcode,
             handle: handle.to_string(),
-            data: data.map(|s| s.to_string()),
+            data: data.map(|d| d.to_vec()),
         };
         let message_bytes = bincode::serialize(&message).unwrap();
         socket.send(&message_bytes)?;

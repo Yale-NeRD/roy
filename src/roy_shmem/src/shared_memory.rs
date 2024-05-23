@@ -9,7 +9,7 @@ pub enum CacheState {
 }
 
 pub struct MemoryState {
-    pub data: Option<String>,
+    pub data: Option<Vec<u8>>,
     pub state: CacheState,
     
 }
@@ -36,5 +36,5 @@ pub enum Opcode {
 pub struct Message {
     pub opcode: Opcode,
     pub handle: String,
-    pub data: Option<String>,
+    pub data: Option<Vec<u8>>,
 }

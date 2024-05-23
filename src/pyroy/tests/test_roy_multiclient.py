@@ -43,18 +43,27 @@ class TestMultipleClients:
             with pytest.raises(AttributeError):
                 my_instance.non_existing_value
             assert my_instance.value == "new_value"
+            roy.set_remote(my_instance)
 
         def client_2():
             my_instance = TestClass()
             # print(my_instance)
             # print(my_instance.key)
             # print(my_instance.value)
+            with pytest.raises(AttributeError):
+                my_instance.value
+            assert my_instance.roy_handle == "roy_ftn.TestClass.1"
+        def client_3():
+            my_instance = roy.get_remote("roy_ftn.TestClass.0")
             assert my_instance.value == "new_value"
 
-        client_process = multiprocessing.Process(target=client_1,)
+        client_process = multiprocessing.Process(target=client_1)
         client_process.start()
         time.sleep(2)
         client_process = multiprocessing.Process(target=client_2)
+        client_process.start()
+        time.sleep(2)
+        client_process = multiprocessing.Process(target=client_3)
         client_process.start()
         time.sleep(2)
 

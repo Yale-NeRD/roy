@@ -64,6 +64,12 @@ class RemoteProxy:
                 if name in self.__dict__:
                     return self.__dict__[name]
                 return getattr(self, name)
+            # TODO: caching support
+
+            #
+            # TODO: function support - check and do pickle
+            #
+
             # Since this is redirected from self.instance.__getattr__,
             # we need to call the super class's __getattr__
             # - self.instance is always WrappedClass instance
@@ -105,59 +111,92 @@ class RemoteProxy:
             setattr(self, name, value)
         else:
             # TODO: add support for functions
-            # self.instance.__dict__[name] = value
             if not callable(value):
                 self.shared_memory.write(f"{self.key}.{name}", value)
             else:
                 # pickle the function and send it to the shared memory
-                serialized_function = pickle.dumps(value)
-                self.shared_memory.write(f"{self.key}.{name}", serialized_function)
+                raise NotImplementedError("Function is not supported yet")
+                # serialized_function = pickle.dumps(value)
+                # self.shared_memory.write(f"{self.key}.{name}", serialized_function)
 
 def get_remote_handle(object_name, handle=None):
     # get the name of object if handle is None
     # TODO: check with the server to retrieve a new handle
-    return f"{ROY_FUNCTION_PREFIX}.{object_name}" if handle is None else handle
+    handle_base = f"{ROY_FUNCTION_PREFIX}.{object_name}" if handle is None else handle
+    new_handle = SharedMemorySingleton().get_next_availble_handle(handle_base)
+    return new_handle
+
+def set_remote_object(handle: str, instance):
+    SharedMemorySingleton().set_handle_object(handle, pickle.dumps(instance))
+
+def get_remote_object(handle):
+    data = SharedMemorySingleton().get_handle_object(handle)
+    if data is None:
+        return None
+    # Convert list of bytes to a byte string
+    return pickle.loads(bytes(data))
+
+class WrappedClassTemplate:
+    def __init__(self, *args, **kwargs):
+        # Recognize the original class's name
+        print("Obj: ", self.__class__.__bases__[1].__name__)
+        # setup remote proxy
+        handle = get_remote_handle(self.__class__.__bases__[1].__name__)
+        # set remote_proxy
+        self.remote_proxy = RemoteProxy(key=handle, instance=self)
+        print("remote_proxy.dict: ", self.remote_proxy.__dict__)
+        # initialize the class. Any attribute set inside the class
+        # will be set in the shared memory
+        super().__init__(*args, **kwargs)
+        # self.__dict__.update(self.remote_proxy.__dict__)
+        print("WrappedClass.dict: ", self.__dict__)
+
+    def __setattr__(self, name, value):
+        if name == 'remote_proxy':
+            self.__dict__['remote_proxy'] = value
+        else:
+            self.remote_proxy.set_attribute_to_shmem(name, value)
+
+    def __getattr__(self, name):
+        if name == 'remote_proxy':
+            return self.__dict__['remote_proxy']
+        if name == 'roy_handle':
+            return self.remote_proxy.key
+        else:
+            return self.remote_proxy.get_attribute_from_shmem(name)
+
+    def __getstate__(self):
+        # Custom pickling logic for WrappedClass
+        state = self.__dict__.copy()
+        # Remove the remote_proxy attribute for pickling
+        del state['remote_proxy']
+        # Return the state with the key to recreate the remote_proxy on unpickling
+        state['remote_proxy_key'] = self.remote_proxy.key
+        return state
+
+    def __setstate__(self, state):
+        # Custom unpickling logic for WrappedClass
+        remote_proxy_key = state.pop('remote_proxy_key')
+        # Restore the state
+        self.__dict__.update(state)
+        # Recreate the remote_proxy after unpickling
+        self.remote_proxy = RemoteProxy(key=remote_proxy_key, instance=self)
+
+def create_wrapped_class(cls, handle=None):
+    class_name = f"Wrapped{cls.__name__}"
+    bases = (WrappedClassTemplate, cls)
+    # Create the class using type()
+    WrappedClass = type(class_name, bases, {})
+    # Register the class in the module's global scope
+    globals()[class_name] = WrappedClass
+    return WrappedClass
 
 def remote_decorator(obj, handle=None):
+    # error nothing has been specified
     if inspect.isfunction(obj):
-        def wrapped_function(*args, **kwargs):
-            shared_memory = SharedMemorySingleton()
-            handle = get_remote_handle(obj.__name__, wrapped_function)
-            result = obj(*args, **kwargs)
-            shared_memory.write(handle, result)
-            return result
-        return wrapped_function
-
+        raise NotImplementedError("Function is not supported yet")
     elif inspect.isclass(obj):
-        class WrappedClass(obj):
-            def __init__(self, *args, **kwargs):
-                print("Obj: ", obj.__name__)
-                # setup remote proxy
-                nonlocal handle # from remote
-                # TODO: Debug:: currently we do not allow user-specified handle
-                assert handle is None
-                handle = get_remote_handle(obj.__name__)
-                # set remote_proxy
-                self.remote_proxy = RemoteProxy(key=handle, instance=self)
-                print("remote_proxy.dict: ", self.remote_proxy.__dict__)
-                # initialize the class. Any attribute set inside the class
-                # will be set in the shared memory
-                super().__init__(*args, **kwargs)
-                # self.__dict__.update(self.remote_proxy.__dict__)
-                print("WrappedClass.dict: ", self.__dict__)
-
-            def __setattr__(self, name, value):
-                if name == 'remote_proxy':
-                    self.__dict__['remote_proxy'] = value
-                else:
-                    self.remote_proxy.set_attribute_to_shmem(name, value)
-
-            def __getattr__(self, name):
-                if name == 'remote_proxy':
-                    return self.__dict__['remote_proxy']
-                else:
-                    return self.remote_proxy.get_attribute_from_shmem(name)
-        return WrappedClass
+        return create_wrapped_class(obj, handle)
     else:
         raise TypeError("Unsupported type for @remote decorator")
 
@@ -165,7 +204,6 @@ def remote_decorator(obj, handle=None):
 #     # error nothing has been specified
 #     if obj is None and handle is None:
 #         raise ValueError("Nothing has been specified for @remote decorator")
-
 #     # for the case the user specifies the handle, e.g., @remote(handle="TestClass"),
 #     # so there is no object to decorate
 #     if obj is None and handle is not None:
@@ -181,8 +219,14 @@ def remote_decorator(obj, handle=None):
 def remote(obj):
     return remote_decorator(obj, None)
 
+def set_remote(instance):
+    handle = instance.roy_handle
+    set_remote_object(handle, instance)
+    return handle
+
 def get_remote(handle: str):
-    return SharedMemorySingleton().read(handle)
+    return get_remote_object(handle)
+    # TODO: check the type ot see if it is a function
 
 # connect to the server
 def connect(server_address: str = "127.0.0.1:50015"):

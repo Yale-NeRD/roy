@@ -1,10 +1,17 @@
 use std::net::{UdpSocket, SocketAddr};
 use std::collections::HashMap;
+use std::num::ParseIntError;
 use std::sync::{Arc, Mutex, RwLock};
 use crate::shared_memory::{MemoryState, CacheState, Message, Opcode};
 
+#[derive(Debug)]
+pub struct HandleStore {
+    pub handles: Vec<String>,
+}
+
 pub struct SharedMemoryServer {
     pub data: Arc::<Mutex<HashMap<String, MemoryState>>>,
+    pub handle_store: Arc::<Mutex<HashMap<String, HandleStore>>>,
     pub server_addr: String,
     running: Arc::<RwLock::<bool>>,
 }
@@ -13,6 +20,7 @@ impl SharedMemoryServer {
     pub fn new(server_addr: String) -> Self {
         SharedMemoryServer {
             data: Arc::new(Mutex::new(HashMap::new())),
+            handle_store: Arc::new(Mutex::new(HashMap::new())),
             server_addr: server_addr,
             running: Arc::new(RwLock::new(false)),
         }
@@ -37,22 +45,13 @@ impl SharedMemoryServer {
         let socket_addr = socket_addr.unwrap();
         // check the address in use
         self.check_port(socket_addr.clone())?;
-        
-        // Wrap the necessary data in Arc<Mutex<>>.
-        let data = Arc::new(Mutex::new(self.data.clone()));
-        // let socket = Arc::new(Mutex::new());
-        
+
         // Clone the Arcs for use in the thread.
         let data_clone = self.data.clone();
+        let handle_store_clone = self.handle_store.clone();
         let running_clone = self.running.clone();
 
-        // std::thread::spawn(move || {
-        //     let res = Self::serve_messages(data_clone, socket_addr.clone(), running_clone);
-        //     if res.is_err() {
-        //         eprintln!("Error: {:?}", res.unwrap_err());
-        //     }
-        // });
-        let _res = Self::serve_messages(data_clone, socket_addr.clone(), running_clone);
+        let _res = Self::serve_messages(data_clone, handle_store_clone, socket_addr.clone(), running_clone);
         println!("Starting server at {}", self.server_addr);
         return Ok(());
     }
@@ -65,8 +64,34 @@ impl SharedMemoryServer {
     //     *self.running.write().unwrap() = false;
     // }
 
+    fn hs_get_index_fron_handle(handle: &str) -> Result<usize, ParseIntError> {
+        return handle.split(".").last().unwrap().parse::<usize>();
+    }
+
+    fn hs_get_the_last_index(handle_store: &HashMap<String, HandleStore>, handle: &str) -> usize {
+        let handle_store = handle_store.get(handle);
+        if handle_store.is_none() {
+            return 0;
+        }
+        let handle_store = handle_store.unwrap();
+        let mut last_unused_idx: usize = 0;
+        for h in handle_store.handles.iter() {
+            let idx = Self::hs_get_index_fron_handle(h);
+            if idx.is_err() {
+                continue;
+            }
+            let idx = idx.unwrap();
+            if idx == last_unused_idx {
+                last_unused_idx += 1;
+            }
+        }
+        println!("Last unused index: {}", last_unused_idx);
+        last_unused_idx
+    }
+
     fn serve_messages(
         data: Arc<Mutex<HashMap<String, MemoryState>>>,
+        handle_store: Arc<Mutex<HashMap<String, HandleStore>>>,
         socket_addr: SocketAddr,
         running: Arc<RwLock<bool>>)
         -> Result<(), std::io::Error> {
@@ -88,11 +113,6 @@ impl SharedMemoryServer {
             }
             let mut buf = [0; 1024];
             let (bytes_read, client_addr) = socket.recv_from(&mut buf)?;
-            let request = std::str::from_utf8(&buf[..bytes_read]);
-            println!("Received request from {}: {}", client_addr, request.unwrap());
-            if request.is_err() {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid request"));
-            }
             let request: Message = bincode::deserialize(&buf[..bytes_read])
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         
@@ -100,7 +120,10 @@ impl SharedMemoryServer {
                 // Control messages
                 Opcode::Init => {
                     println!("Received INIT message with handle: {}", request.handle);
-                    let response = Message { opcode: Opcode::Ack, handle: "".to_string(), data: Some("OK".to_string()) };
+                    let response = Message {
+                        opcode: Opcode::Ack,
+                        handle: "".to_string(),
+                        data: Some("OK".as_bytes().to_vec()) };
                     let response_bytes = bincode::serialize(&response).unwrap();
                     socket.send_to(&response_bytes, client_addr)?;
                 },
@@ -108,6 +131,26 @@ impl SharedMemoryServer {
                     println!("Received TERMINATE message with handle: {}", request.handle);
                     *running.write().unwrap() = false;
                     break;
+                },
+                Opcode::NewHandle => {
+                    println!("Received NEW_HANDLE message with handle: {}", request.handle);
+                    // check handle store for existing handle
+                    let mut handle_store = handle_store.lock().unwrap();
+                    let handle = handle_store.get(&request.handle);
+                    let new_handle;
+                    // assign new handle with format [handle_name].0, [handle_name].1, ...
+                    if handle.is_some() {
+                        let last_idx = Self::hs_get_the_last_index(&handle_store, &request.handle);
+                        new_handle = format!("{}.{}", request.handle, last_idx);
+                        handle_store.get_mut(&request.handle).unwrap().handles.push(new_handle.clone());
+                    } else {
+                        let last_idx = 0;
+                        new_handle = format!("{}.{}", request.handle, last_idx);
+                        handle_store.insert(request.handle.clone(), HandleStore { handles: vec![new_handle.clone()] });
+                    }
+                    let response = Message { opcode: Opcode::NewHandleResp, handle: request.handle, data: Some(new_handle.as_bytes().to_vec()) };
+                    let response_bytes = bincode::serialize(&response).unwrap();
+                    socket.send_to(&response_bytes, client_addr)?;
                 },
                 // Data messages
                 Opcode::Read => {
@@ -118,11 +161,11 @@ impl SharedMemoryServer {
                             if state.data.is_some() {
                                 Message { opcode: Opcode::ReadResp, handle: request.handle, data: Some(state.data.clone().unwrap()) }
                             } else {
-                                Message { opcode: Opcode::ReadNack, handle: request.handle, data: Some("Key not found".to_string()) }
+                                Message { opcode: Opcode::ReadNack, handle: request.handle, data: Some("Key not found".as_bytes().to_vec()) }
                             }
                         },
                         None => {
-                            Message { opcode: Opcode::ReadNack, handle: request.handle, data: Some("Key not found".to_string()) }
+                            Message { opcode: Opcode::ReadNack, handle: request.handle, data: Some("Key not found".as_bytes().to_vec()) }
                         }
                     };
                     let response_bytes = bincode::serialize(&response).unwrap();
@@ -136,7 +179,10 @@ impl SharedMemoryServer {
                         Some(new_data) => new_data,
                         None => {
                             // send WriteNack
-                            let response = Message { opcode: Opcode::WriteNack, handle: request.handle, data: Some("Invalid data to insert".to_string()) };
+                            let response = Message {
+                                opcode: Opcode::WriteNack,
+                                handle: request.handle,
+                                data: Some("Invalid data to insert".as_bytes().to_vec()) };
                             let response_bytes = bincode::serialize(&response).unwrap();
                             socket.send_to(&response_bytes, client_addr)?;
                             continue;
@@ -148,7 +194,7 @@ impl SharedMemoryServer {
                         data: Some(new_data.clone()),
                         state: CacheState::Modified
                     };
-                    locked_data.insert(handle, new_state);
+                    locked_data.insert(handle, new_state); 
                     let response = Message { opcode: Opcode::WriteResp, handle: request.handle, data: None };
                     let response_bytes = bincode::serialize(&response).unwrap();
                     println!("Sent response: {:?}", response);
