@@ -9,7 +9,7 @@ pub enum CacheState {
 }
 
 pub struct MemoryState {
-    pub data: Option<String>,
+    pub data: Option<Vec<u8>>,
     pub state: CacheState,
     
 }
@@ -25,6 +25,10 @@ pub enum Opcode {
     ReadNack = 5,
     WriteResp = 6,
     WriteNack = 7,
+    ReadPickle = 8,     // response should be ReadResp, ReadNack
+    WritePickle = 9,    // response should be WriteResp, WriteNack
+    NewHandle = 101,
+    NewHandleResp = 102,
     Term = 126,
     Ack = 127,
     Other(u8), // This can be used to handle other opcodes
@@ -33,5 +37,6 @@ pub enum Opcode {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
     pub opcode: Opcode,
-    pub body: String,
+    pub handle: String,
+    pub data: Option<Vec<u8>>,
 }
