@@ -80,7 +80,7 @@ impl SharedMemory {
         }
 
         let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
-        let res = socket.write_data_bytes(&handle, &instance);
+        let res = socket.write_pickle(&handle, &instance);
         if res.is_err() {
             return Err(PyValueError::new_err(res.unwrap_err().to_string()));
         }
@@ -93,7 +93,7 @@ impl SharedMemory {
         }
 
         let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
-        let res = socket.read_data_bytes(&handle);
+        let res = socket.read_data_pickle(&handle);
         match res {
             Ok(data) => Ok(Some(data)),
             Err(_) => Ok(None),

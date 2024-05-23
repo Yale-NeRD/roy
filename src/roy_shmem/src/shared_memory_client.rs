@@ -72,7 +72,18 @@ impl SharedMemoryClient {
         })
     }
 
-    pub fn read_data_bytes(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
+    pub fn read_data_pickle(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
+        self.send_message(Opcode::ReadPickle, key, None)?;
+        let msg = self.recv_message()?;
+        if msg.opcode != Opcode::ReadResp || !msg.data.is_some(){
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid response"));
+        }
+        Ok(msg.data.unwrap())
+    }
+
+    fn read_data_bytes(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
         self.send_message(Opcode::Read, key, None)?;
         let msg = self.recv_message()?;
         if msg.opcode != Opcode::ReadResp || !msg.data.is_some(){
@@ -84,11 +95,15 @@ impl SharedMemoryClient {
     }
 
     pub fn write_data(&self, key: &str, value: &str) -> Result<(), std::io::Error> {
-        self.write_data_bytes(key, &value.as_bytes().to_vec())
+        self.write_data_bytes(Opcode::Write, key, &value.as_bytes().to_vec())
     }
 
-    pub fn write_data_bytes(&self, key: &str, value: &Vec<u8>) -> Result<(), std::io::Error> {
-        self.send_message(Opcode::Write, key, Some(value))?;
+    pub fn write_pickle(&self, key: &str, value: &Vec<u8>) -> Result<(), std::io::Error> {
+        self.write_data_bytes(Opcode::WritePickle, key, value)
+    }
+
+    fn write_data_bytes(&self, opcode: Opcode, key: &str, value: &Vec<u8>) -> Result<(), std::io::Error> {
+        self.send_message(opcode, key, Some(value))?;
         let resp = self.recv_message()?;
         if resp.opcode != Opcode::WriteResp {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));

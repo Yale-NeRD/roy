@@ -11,95 +11,38 @@ class SharedMemorySingleton:
             cls._instance = roy_shmem.SharedMemory()
         return cls._instance
 
-class RemoteValue:
-    def __init__(self, shared_memory, key, initial_value):
-        self.shared_memory = shared_memory
-        self.key = key
-        self._write(initial_value)
-
-    def _read(self):
-        result = self.shared_memory.read(self.key)
-        return result if result is not None else ""
-
-    def _write(self, value):
-        self.shared_memory.write(self.key, value)
-
-    def __str__(self):
-        return self._read()
-
-    def __repr__(self):
-        return repr(self._read())
-
-    def __eq__(self, other):
-        return self._read() == other
-
-    def __ne__(self, other):
-        return self._read() != other
-
-    def __setattr__(self, name, value):
-        if name in ["shared_memory", "key"]:
-            super().__setattr__(name, value)
-        else:
-            self._write(value)
-
-    def __getattr__(self, name):
-        if name == "value":
-            return self._read()
-        raise AttributeError(f"'RemoteValue' object has no attribute '{name}'")
-
 class RemoteProxy:
     def __init__(self, key, instance):
         print(f"RemoteProxy({key}, {instance})")
         print("instance::super: ", super(type(instance), instance).__dict__)
-        self.default_attrs = ["shared_memory", "key", "instance"]
-        self.shared_memory = SharedMemorySingleton()
-        self.key = key
+        self._default_attrs = ["_shared_memory", "_key", "_instance", "_function_dict"]
+        self._shared_memory = SharedMemorySingleton()
+        self._key = key
+        self._function_dict = {}
         self.instance = instance
+
+    def get_ray_handle(self):
+        return self._key
 
     def get_attribute_from_shmem(self, name):
         print(f"__getattr__({name})")
         try:
-            if name == "default_attrs" or name in self.default_attrs:
+            if name == "_default_attrs" or name in self._default_attrs:
                 # return proxy's attribute
                 if name in self.__dict__:
                     return self.__dict__[name]
                 return getattr(self, name)
             # TODO: caching support
 
-            #
-            # TODO: function support - check and do pickle
-            #
-
-            # Since this is redirected from self.instance.__getattr__,
-            # we need to call the super class's __getattr__
-            # - self.instance is always WrappedClass instance
-            # if super(type(self.instance), self.instance).__dict__.get(name):
-            #     attr = super(type(self.instance), self.instance).__dict__[name]
-
-            #     # TODO: experimental support for functions
-            #     if callable(attr):
-            #         # wrapper to call shared memory write
-            #         def method_proxy(*args, **kwargs):
-            #             result = attr(*args, **kwargs)
-            #             self.shared_memory.write(f"{self.key}.{name}", result)
-            #             return result
-            #         return method_proxy
-            #     else:
-            #         err_msg = f"'{super(type(self.instance))}' should not have non-callable attr: '{name}'"
-            #         err_msg += f"\nother than {self.default_attrs}"
-            #         raise AttributeError(err_msg)
-            if name in self.instance.__dict__ and callable(self.instance.__dict__[name]):
-                # wrapper to call shared memory write
-                def method_proxy(*args, **kwargs):
-                    result = self.instance.__dict__[name](*args, **kwargs)
-                    # self.shared_memory.write(f"{self.key}.{name}", result)
-                    return result
-                return method_proxy
+            if name in self._function_dict and callable(self._function_dict[name]):
+                return self._function_dict[name]
 
             # Normal attirbute
-            attr = self.shared_memory.read(f"{self.key}.{name}")
+            attr = self._shared_memory.read(f"{self._key}.{name}")
             if attr is None:
                 raise KeyError()
+            if callable(attr):
+                raise NotImplementedError("Functions cannot be fetched dynamically")
             return attr
         except KeyError:
             raise AttributeError(
@@ -107,17 +50,15 @@ class RemoteProxy:
 
     def set_attribute_to_shmem(self, name, value):
         print(f"__setattr__({name}, '{value}')")
-        if name == "default_attrs" or name in self.default_attrs:
+        if name == "_default_attrs" or name in self._default_attrs:
             setattr(self, name, value)
         else:
             # TODO: add support for functions
             if not callable(value):
-                self.shared_memory.write(f"{self.key}.{name}", value)
+                self._shared_memory.write(f"{self._key}.{name}", value)
             else:
                 # pickle the function and send it to the shared memory
-                raise NotImplementedError("Function is not supported yet")
-                # serialized_function = pickle.dumps(value)
-                # self.shared_memory.write(f"{self.key}.{name}", serialized_function)
+                raise NotImplementedError("Functions cannot be added dynamically")
 
 def get_remote_handle(object_name, handle=None):
     # get the name of object if handle is None
@@ -139,17 +80,19 @@ def get_remote_object(handle):
 class WrappedClassTemplate:
     def __init__(self, *args, **kwargs):
         # Recognize the original class's name
-        print("Obj: ", self.__class__.__bases__[1].__name__)
+        # print("Obj: ", self.__class__.__bases__[1].__name__)
         # setup remote proxy
         handle = get_remote_handle(self.__class__.__bases__[1].__name__)
         # set remote_proxy
         self.remote_proxy = RemoteProxy(key=handle, instance=self)
-        print("remote_proxy.dict: ", self.remote_proxy.__dict__)
+        # print("remote_proxy.dict: ", self.remote_proxy.__dict__)
         # initialize the class. Any attribute set inside the class
         # will be set in the shared memory
         super().__init__(*args, **kwargs)
         # self.__dict__.update(self.remote_proxy.__dict__)
-        print("WrappedClass.dict: ", self.__dict__)
+        # print("WrappedClass.dict: ", self.__dict__)
+        # Store the current object in the shared memory
+        set_remote_object(handle, self)
 
     def __setattr__(self, name, value):
         if name == 'remote_proxy':
@@ -161,7 +104,7 @@ class WrappedClassTemplate:
         if name == 'remote_proxy':
             return self.__dict__['remote_proxy']
         if name == 'roy_handle':
-            return self.remote_proxy.key
+            return self.remote_proxy._key
         else:
             return self.remote_proxy.get_attribute_from_shmem(name)
 
@@ -171,7 +114,7 @@ class WrappedClassTemplate:
         # Remove the remote_proxy attribute for pickling
         del state['remote_proxy']
         # Return the state with the key to recreate the remote_proxy on unpickling
-        state['remote_proxy_key'] = self.remote_proxy.key
+        state['remote_proxy_key'] = self.remote_proxy.get_ray_handle()
         return state
 
     def __setstate__(self, state):

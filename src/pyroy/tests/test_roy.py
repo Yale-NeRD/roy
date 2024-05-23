@@ -33,6 +33,8 @@ class TestRemoteDecorator:
                 self.value = value
             def custom_ftn(self, arg):
                 return arg
+            def custom_get(self):
+                return self.value
 
         # print("TestClass:", TestClass.__setattr__)
         my_instance = TestClass("initial_value")
@@ -45,6 +47,10 @@ class TestRemoteDecorator:
         assert my_instance.value == "new_value"
         # check if the custom function can work
         assert my_instance.custom_ftn("arg") == "arg"
+        assert my_instance.custom_get() == "new_value"
+        # check if adding function at runtime throw error
+        with pytest.raises(NotImplementedError):
+            my_instance.custom_inc = lambda x: x + 1
 
 if __name__ == '__main__':
     pytest.main()

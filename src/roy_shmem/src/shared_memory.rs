@@ -25,6 +25,8 @@ pub enum Opcode {
     ReadNack = 5,
     WriteResp = 6,
     WriteNack = 7,
+    ReadPickle = 8,     // response should be ReadResp, ReadNack
+    WritePickle = 9,    // response should be WriteResp, WriteNack
     NewHandle = 101,
     NewHandleResp = 102,
     Term = 126,

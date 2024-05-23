@@ -34,6 +34,8 @@ class TestMultipleClients:
             def __init__(self, value=None):
                 if value is not None:
                     self.value = value
+            def custom_ftn(self, arg):
+                return arg
         def client_1():
             my_instance = TestClass("initial_value")
             assert str(my_instance) != ""
@@ -43,7 +45,6 @@ class TestMultipleClients:
             with pytest.raises(AttributeError):
                 my_instance.non_existing_value
             assert my_instance.value == "new_value"
-            roy.set_remote(my_instance)
 
         def client_2():
             my_instance = TestClass()
@@ -56,6 +57,7 @@ class TestMultipleClients:
         def client_3():
             my_instance = roy.get_remote("roy_ftn.TestClass.0")
             assert my_instance.value == "new_value"
+            assert my_instance.custom_ftn("arg2") == "arg2"
 
         client_process = multiprocessing.Process(target=client_1)
         client_process.start()
