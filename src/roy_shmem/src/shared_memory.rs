@@ -1,6 +1,8 @@
 
 use serde::{Serialize, Deserialize};
 
+pub const ROY_BUFFER_SIZE: usize = 1024 * 1024;
+
 pub enum CacheState {
     Shared,
     Modified,
@@ -15,7 +17,7 @@ pub struct MemoryState {
 }
 
 // Messages
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum Opcode {
     Init = 1,

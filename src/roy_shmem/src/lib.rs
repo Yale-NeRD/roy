@@ -54,6 +54,10 @@ impl SharedMemory {
     }
 
     fn connect_server(&mut self, server_addr: String) -> PyResult<()> {
+        if self.server_connection.is_some() {
+            println!("Server connection already initialized");            
+            return Ok(());
+        }
         let server_conn = SharedMemoryClient::new(server_addr);
         self.server_connection = Some(server_conn);
         let err = self.server_connection.as_mut().unwrap().connect();
@@ -79,6 +83,7 @@ impl SharedMemory {
             return Err(PyValueError::new_err("Server connection not initialized"));
         }
 
+        println!("Setting handle: {}, Length: {}", handle, instance.len());
         let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
         let res = socket.write_pickle(&handle, &instance);
         if res.is_err() {
@@ -100,39 +105,39 @@ impl SharedMemory {
         }
     }
 
-    fn read(&self, key: String) -> PyResult<Option<String>> {
-        println!("Reading from key: {}", key);
-        let mut data = self.data.lock().unwrap();
-        // TODO: check the cache state if it is safe to use this value
-        // if data.contains_key(&key) {
-        //     return Ok(data.get(&key).cloned());
-        // }
-        if self.server_connection.is_none() {
-            return Err(PyValueError::new_err("Server connection not initialized"));
-        }
+    // fn read(&self, key: String) -> PyResult<Option<String>> {
+    //     println!("Reading from key: {}", key);
+    //     let mut data = self.data.lock().unwrap();
+    //     // TODO: check the cache state if it is safe to use this value
+    //     // if data.contains_key(&key) {
+    //     //     return Ok(data.get(&key).cloned());
+    //     // }
+    //     if self.server_connection.is_none() {
+    //         return Err(PyValueError::new_err("Server connection not initialized"));
+    //     }
 
-        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
-        // use the server connection to request the value of the key
-        let value = socket.read_data(&key);
-        if value.is_err() {
-            return Ok(None);
-        }
-        let value = value.unwrap();
-        data.insert(key.clone(), value.clone());
-        Ok(Some(value))
-    }
+    //     let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+    //     // use the server connection to request the value of the key
+    //     let value = socket.read_data(&key);
+    //     if value.is_err() {
+    //         return Ok(None);
+    //     }
+    //     let value = value.unwrap();
+    //     data.insert(key.clone(), value.clone());
+    //     Ok(Some(value))
+    // }
 
-    fn write(&self, key: String, value: String) -> PyResult<()> {
-        println!("Writing to key: {}, value: {}", key, value);
-        let mut data = self.data.lock().unwrap();
-        if self.server_connection.is_none() {
-            return Err(PyValueError::new_err("Server connection not initialized"));
-        }
-        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
-        socket.write_data(&key, &value)?;
-        data.insert(key, value);
-        Ok(())
-    }
+    // fn write(&self, key: String, value: String) -> PyResult<()> {
+    //     println!("Writing to key: {}, value: {}", key, value);
+    //     let mut data = self.data.lock().unwrap();
+    //     if self.server_connection.is_none() {
+    //         return Err(PyValueError::new_err("Server connection not initialized"));
+    //     }
+    //     let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+    //     socket.write_data(&key, &value)?;
+    //     data.insert(key, value);
+    //     Ok(())
+    // }
 }
 
 #[pymodule]

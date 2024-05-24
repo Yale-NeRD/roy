@@ -24,3 +24,7 @@ clean:
 	@cd src/roy_shmem && cargo clean
 	@find . -type d -name __pycache__ -exec rm -r {} \+
 	@pip uninstall roy_ctrl
+
+# example
+example: build_py pydep
+	@cd src/examples && python pi_compute.py

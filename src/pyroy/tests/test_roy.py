@@ -20,6 +20,15 @@ def server():
     yield server_process
     clean_env(server_process)
 
+@remote
+class RoyTestClass:
+    def __init__(self, value):
+        self.value = value
+    def custom_ftn(self, arg):
+        return arg
+    def custom_get(self):
+        return self.value
+
 class TestRemoteDecorator:
     @pytest.fixture(autouse=True)
     def setup(self, server):
@@ -27,17 +36,8 @@ class TestRemoteDecorator:
         connect()
 
     def test_my_class(self):
-        @remote
-        class TestClass:
-            def __init__(self, value):
-                self.value = value
-            def custom_ftn(self, arg):
-                return arg
-            def custom_get(self):
-                return self.value
-
-        # print("TestClass:", TestClass.__setattr__)
-        my_instance = TestClass("initial_value")
+        # print("RoyTestClass:", RoyTestClass.__setattr__)
+        my_instance = RoyTestClass("initial_value")
         assert str(my_instance) != ""
         assert my_instance.value == "initial_value"
         my_instance.value = "new_value"

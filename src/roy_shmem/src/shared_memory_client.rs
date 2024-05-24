@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, UdpSocket, SocketAddr};
-use crate::shared_memory::{Message, Opcode};
+use crate::shared_memory::{Message, Opcode, ROY_BUFFER_SIZE};
 
 pub struct SharedMemoryClient {
     pub socket: Option<UdpSocket>,
@@ -136,7 +136,7 @@ impl SharedMemoryClient {
     }
 
     fn recv_message(&self) -> Result<Message, std::io::Error> {
-        let mut buf = [0; 1024];
+        let mut buf: Box<[u8]> = vec![0; ROY_BUFFER_SIZE].into_boxed_slice();
         let socket = self.socket.as_ref().unwrap();
         let (bytes_read, _) = socket.recv_from(&mut buf)?;
         let message = bincode::deserialize(&buf[..bytes_read])

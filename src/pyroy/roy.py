@@ -1,6 +1,6 @@
 import roy_shmem
 import inspect
-import pickle
+import cloudpickle
 
 ROY_FUNCTION_PREFIX = "roy_ftn"
 
@@ -11,15 +11,78 @@ class SharedMemorySingleton:
             cls._instance = roy_shmem.SharedMemory()
         return cls._instance
 
+def set_remote_object(handle: str, instance):
+    SharedMemorySingleton().set_handle_object(handle, cloudpickle.dumps(instance))
+
+def get_remote_object(handle):
+    data = SharedMemorySingleton().get_handle_object(handle)
+    if data is None:
+        return None
+    # print("Raw: ", data)
+    # Convert list of bytes to a byte string
+    loaded = cloudpickle.loads(bytes(data))
+    print("Loaded: ", loaded)
+    if inspect.isclass(loaded):
+        return create_wrapper_class(loaded, handle)
+    return loaded
+
+def augment_list(object_handle, attr):        
+    class RoyList(list):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.remote
+        
+        def __setitem__(self, index, value):
+            print(f"__setitem__({index}, {value})")
+            super().__setitem__(index, value)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+        
+        def append(self, value):
+            super().append(value)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+        
+        def extend(self, iterable):
+            super().extend(iterable)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+        
+        def insert(self, index, value):
+            super().insert(index, value)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+        
+        def remove(self, value):
+            super().remove(value)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+        
+        def pop(self, index=-1):
+            result = super().pop(index)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+            return result
+        
+        def clear(self):
+            super().clear()
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+        
+        def __setattr__(self, name, value):
+            super().__setattr__(name, value)
+            nonlocal object_handle
+            set_remote_object(object_handle, self)
+    
+    return RoyList(attr)
+
 class RemoteProxy:
     def __init__(self, key, instance):
-        print(f"RemoteProxy({key}, {instance})")
-        print("instance::super: ", super(type(instance), instance).__dict__)
-        self._default_attrs = ["_shared_memory", "_key", "_instance", "_function_dict"]
-        self._shared_memory = SharedMemorySingleton()
+        # print(f"RemoteProxy for {key}: {instance.wrapped_obj}")
+        self._default_attrs = ["_key", "_instance", "_function_dict"]
         self._key = key
         self._function_dict = {}
-        self.instance = instance
+        self._instance = instance
 
     def get_ray_handle(self):
         return self._key
@@ -34,19 +97,28 @@ class RemoteProxy:
                 return getattr(self, name)
             # TODO: caching support
 
-            if name in self._function_dict and callable(self._function_dict[name]):
-                return self._function_dict[name]
+            # if name in self._function_dict and callable(self._function_dict[name]):
+            #     return self._function_dict[name]
 
             # Normal attirbute
-            attr = self._shared_memory.read(f"{self._key}.{name}")
+            attr = get_remote_object(f"{self._key}.{name}")
             if attr is None:
                 raise KeyError()
             if callable(attr):
                 raise NotImplementedError("Functions cannot be fetched dynamically")
+
+            # augment attr so that any update will be reflected in the shared memory
+            if attr is list:
+                object_handle = f"{self._key}.{name}"
+                attr = augment_list(object_handle, attr)
+            print(f"Get attr: {attr}")
             return attr
         except KeyError:
             raise AttributeError(
-                f"{super(type(self.instance))} object has no attribute '{name}'")
+                f"{type(self._instance.wrapped_obj)} object has no attribute '{name}'"\
+                if self._instance.__dict__.get('wrapped_obj') is not None\
+                else f"Wrapped instance in {type(self._instance)} has no attribute '{name}'"
+            )
 
     def set_attribute_to_shmem(self, name, value):
         print(f"__setattr__({name}, '{value}')")
@@ -55,10 +127,78 @@ class RemoteProxy:
         else:
             # TODO: add support for functions
             if not callable(value):
-                self._shared_memory.write(f"{self._key}.{name}", value)
+                set_remote_object(f"{self._key}.{name}", value)
             else:
-                # pickle the function and send it to the shared memory
+                # cloudpickle the function and send it to the shared memory
                 raise NotImplementedError("Functions cannot be added dynamically")
+
+def create_wrapper_class(cls, roy_handle=None):
+    class RoyRemoteObject(cls):
+        def __init__(self, *args, **kwargs):
+            nonlocal cls
+            nonlocal roy_handle
+            # Recognize the original class's name
+            # print("Obj: ", self.__class__.__bases__[1].__name__)
+            print("cls:", cls, ", Id:", id(cls))
+            if inspect.isclass(cls):  # Check if cls is a class
+                # setup remote proxy
+                handle = get_remote_handle(cls.__name__)
+                # set remote_proxy
+                self.__dict__['remote_proxy'] = RemoteProxy(key=handle, instance=self)
+                self.__dict__['roy_handle'] = handle
+                self.__dict__['wrapped_obj'] = cls(*args, **kwargs)
+                print("Wrapped object:", self.__dict__['wrapped_obj'], ", Id:", id(self.__dict__['wrapped_obj'].__class__))
+                super().__init__(*args, **kwargs)
+                # set_remote_object(handle, self.__dict__['wrapped_obj'])
+                set_remote_object(handle, self)
+            else:   # instance is given (from cloudpickle load)
+                assert roy_handle is not None
+                self.__dict__['remote_proxy'] = RemoteProxy(key=roy_handle, instance=self)
+                self.__dict__['roy_handle'] = roy_handle
+                self.__dict__['wrapped_obj'] = cls
+            # print("remote_proxy.dict: ", self.remote_proxy.__dict__)
+            # initialize the class. Any attribute set inside the class
+            # will be set in the shared memory
+            # super().__init__(*args, **kwargs)
+            # self.__dict__.update(self.remote_proxy.__dict__)
+            # print("WrappedClass.dict: ", self.__dict__)
+            # Store the current object in the shared memory
+            
+
+        def __setattr__(self, name, value):
+            self.remote_proxy.set_attribute_to_shmem(name, value)
+
+        def __getattr__(self, name):
+            if name in self.__dict__:
+                # TODO: this shouldn't be called though, since __dict__ should be checked first
+                return self.__dict__[name]
+            else:
+                return self.remote_proxy.get_attribute_from_shmem(name)
+
+        def __getstate__(self):
+            # Custom pickling logic for WrappedClass
+            state = self.__dict__.copy()
+            # Remove the remote_proxy attribute for pickling
+            del state['remote_proxy']
+            # Return the state with the key to recreate the remote_proxy on unpickling
+            state['remote_proxy_key'] = self.remote_proxy.get_ray_handle()
+            return state
+
+        def __setstate__(self, state):
+            # Custom unpickling logic for WrappedClass
+            remote_proxy_key = state.pop('remote_proxy_key')
+            # Restore the state
+            self.__dict__.update(state)
+            # Recreate the remote_proxy after unpickling
+            self.__dict__['remote_proxy'] = RemoteProxy(key=remote_proxy_key, instance=self)
+
+    # return create_wrapped_class(obj, handle)
+    # RoyRemoteObject.__module__ = cls.__module__
+    RoyRemoteObject.__module__ = cls.__module__
+    RoyRemoteObject.__name__ = cls.__name__
+    globals()[RoyRemoteObject.__name__] = RoyRemoteObject
+    print(RoyRemoteObject.__module__, ":", RoyRemoteObject.__name__)
+    return RoyRemoteObject
 
 def get_remote_handle(object_name, handle=None):
     # get the name of object if handle is None
@@ -67,79 +207,21 @@ def get_remote_handle(object_name, handle=None):
     new_handle = SharedMemorySingleton().get_next_availble_handle(handle_base)
     return new_handle
 
-def set_remote_object(handle: str, instance):
-    SharedMemorySingleton().set_handle_object(handle, pickle.dumps(instance))
+# def create_wrapped_class(cls, handle=None):
+#     class_name = f"Wrapped{cls.__name__}"
+#     bases = (WrappedClassTemplate, cls)
+#     # Create the class using type()
+#     WrappedClass = type(class_name, bases, {})
+#     # Register the class in the module's global scope
+#     globals()[class_name] = WrappedClass
+#     return WrappedClass
 
-def get_remote_object(handle):
-    data = SharedMemorySingleton().get_handle_object(handle)
-    if data is None:
-        return None
-    # Convert list of bytes to a byte string
-    return pickle.loads(bytes(data))
-
-class WrappedClassTemplate:
-    def __init__(self, *args, **kwargs):
-        # Recognize the original class's name
-        # print("Obj: ", self.__class__.__bases__[1].__name__)
-        # setup remote proxy
-        handle = get_remote_handle(self.__class__.__bases__[1].__name__)
-        # set remote_proxy
-        self.remote_proxy = RemoteProxy(key=handle, instance=self)
-        # print("remote_proxy.dict: ", self.remote_proxy.__dict__)
-        # initialize the class. Any attribute set inside the class
-        # will be set in the shared memory
-        super().__init__(*args, **kwargs)
-        # self.__dict__.update(self.remote_proxy.__dict__)
-        # print("WrappedClass.dict: ", self.__dict__)
-        # Store the current object in the shared memory
-        set_remote_object(handle, self)
-
-    def __setattr__(self, name, value):
-        if name == 'remote_proxy':
-            self.__dict__['remote_proxy'] = value
-        else:
-            self.remote_proxy.set_attribute_to_shmem(name, value)
-
-    def __getattr__(self, name):
-        if name == 'remote_proxy':
-            return self.__dict__['remote_proxy']
-        if name == 'roy_handle':
-            return self.remote_proxy._key
-        else:
-            return self.remote_proxy.get_attribute_from_shmem(name)
-
-    def __getstate__(self):
-        # Custom pickling logic for WrappedClass
-        state = self.__dict__.copy()
-        # Remove the remote_proxy attribute for pickling
-        del state['remote_proxy']
-        # Return the state with the key to recreate the remote_proxy on unpickling
-        state['remote_proxy_key'] = self.remote_proxy.get_ray_handle()
-        return state
-
-    def __setstate__(self, state):
-        # Custom unpickling logic for WrappedClass
-        remote_proxy_key = state.pop('remote_proxy_key')
-        # Restore the state
-        self.__dict__.update(state)
-        # Recreate the remote_proxy after unpickling
-        self.remote_proxy = RemoteProxy(key=remote_proxy_key, instance=self)
-
-def create_wrapped_class(cls, handle=None):
-    class_name = f"Wrapped{cls.__name__}"
-    bases = (WrappedClassTemplate, cls)
-    # Create the class using type()
-    WrappedClass = type(class_name, bases, {})
-    # Register the class in the module's global scope
-    globals()[class_name] = WrappedClass
-    return WrappedClass
-
-def remote_decorator(obj, handle=None):
+def remote_decorator(obj, _handle=None):
     # error nothing has been specified
     if inspect.isfunction(obj):
         raise NotImplementedError("Function is not supported yet")
     elif inspect.isclass(obj):
-        return create_wrapped_class(obj, handle)
+        return create_wrapper_class(obj)
     else:
         raise TypeError("Unsupported type for @remote decorator")
 

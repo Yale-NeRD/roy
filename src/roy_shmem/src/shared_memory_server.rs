@@ -2,7 +2,7 @@ use std::net::{UdpSocket, SocketAddr};
 use std::collections::HashMap;
 use std::num::ParseIntError;
 use std::sync::{Arc, Mutex, RwLock};
-use crate::shared_memory::{MemoryState, CacheState, Message, Opcode};
+use crate::shared_memory::{MemoryState, CacheState, Message, Opcode, ROY_BUFFER_SIZE};
 
 #[derive(Debug)]
 pub struct HandleStore {
@@ -48,12 +48,13 @@ impl SharedMemoryServer {
         // check the address in use
         self.check_port(socket_addr.clone())?;
         // start main body loop
+        println!("Starting server at {}", self.server_addr);
         let _res = Self::serve_messages(
             self.data.clone(),
             self.pickle_data.clone(),
             self.handle_store.clone(),
             socket_addr.clone(), self.running.clone());
-        println!("Starting server at {}", self.server_addr);
+        println!("Server terminated");
         return Ok(());
     }
 
@@ -109,15 +110,14 @@ impl SharedMemoryServer {
         *running.write().unwrap() = true;
 
         // Listen for incoming messages
+        let mut buf: Box<[u8]> = vec![0; ROY_BUFFER_SIZE].into_boxed_slice();
         loop {
             if *running.read().unwrap() == false {
                 break;
             }
-            let mut buf = [0; 1024];
             let (bytes_read, client_addr) = socket.recv_from(&mut buf)?;
             let request: Message = bincode::deserialize(&buf[..bytes_read])
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        
             match request.opcode {
                 // Control messages
                 Opcode::Init => {
@@ -171,7 +171,7 @@ impl SharedMemoryServer {
                         }
                     };
                     let response_bytes = bincode::serialize(&response).unwrap();
-                    println!("Sent response: {:?}", response);
+                    // println!("Sent response: {:?}", response);
                     socket.send_to(&response_bytes, client_addr)?;
                 },
                 Opcode::ReadPickle => {
@@ -202,7 +202,7 @@ impl SharedMemoryServer {
                     locked_data.insert(handle, new_state); 
                     let response = Message { opcode: Opcode::WriteResp, handle: request.handle, data: None };
                     let response_bytes = bincode::serialize(&response).unwrap();
-                    println!("Sent response: {:?}", response);
+                    // println!("Sent response: {:?}", response);
                     socket.send_to(&response_bytes, client_addr)?;
                 },
                 Opcode::WritePickle => {
@@ -237,7 +237,7 @@ impl SharedMemoryServer {
             }
         };
         let response_bytes = bincode::serialize(&response).unwrap();
-        println!("Sent response: {:?}", response);
+        // println!("Sent response: {:?}", response);
         socket.send_to(&response_bytes, client_addr)?;
         Ok(())
     }
@@ -272,7 +272,7 @@ impl SharedMemoryServer {
         locked_data.insert(handle, new_state); 
         let response = Message { opcode: Opcode::WriteResp, handle: request.handle.clone(), data: None };
         let response_bytes = bincode::serialize(&response).unwrap();
-        println!("Sent response: {:?}", response);
+        // println!("Sent response: {:?}", response);
         let _res = socket.send_to(&response_bytes, client_addr);
         return Ok(());
     }
