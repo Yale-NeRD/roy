@@ -40,16 +40,18 @@ class TestMultipleClients:
         handle_key = "test_roy_multiplient.test_handle"
         def client_1():
             my_instance = RoyTestClass("initial_value")
+            my_instance.lock()
             assert str(my_instance) != ""
             assert my_instance.value == "initial_value"
             my_instance.value = "new_value"
             # test if the access to non-existing attribute raises AttributeError
             with pytest.raises(AttributeError):
-                my_instance.non_existing_value
+                print(my_instance.non_existing_value)
             assert my_instance.value == "new_value"
             roy_handle = my_instance.roy_handle
             roy.set_remote_object(handle_key, roy_handle)
             print("roy_handle:", roy_handle)
+            my_instance.unlock()
 
         def client_2():
             my_instance = RoyTestClass()
@@ -60,12 +62,16 @@ class TestMultipleClients:
                 my_instance.value
 
         def client_3():
+            # getting handle, assuming it is already set
+            # and others do not modify this value (i.e., no lock)
             roy_handle = roy.get_remote_object(handle_key)
             assert roy_handle is not None
-            my_instance = roy.get_remote(roy_handle)
+            # get remote object with lock
+            my_instance = roy.get_remote_object_with_lock(roy_handle)
             assert my_instance is not None
             assert my_instance.value == "new_value"
             assert my_instance.custom_ftn("arg2") == "arg2"
+            my_instance.unlock()
 
         client_process = multiprocessing.Process(target=client_1)
         client_process.start()

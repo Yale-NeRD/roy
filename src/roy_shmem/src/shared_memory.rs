@@ -20,7 +20,9 @@ pub struct MemoryState {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum Opcode {
+    // Initialize the connection
     Init = 1,
+    // Data transfer
     Read = 2,
     Write = 3,
     ReadResp = 4,
@@ -29,9 +31,18 @@ pub enum Opcode {
     WriteNack = 7,
     ReadPickle = 8,     // response should be ReadResp, ReadNack
     WritePickle = 9,    // response should be WriteResp, WriteNack
+    // Locking
+    Lock = 51,          // request to grab a lock
+    LockAcqd = 52,      // response indicating that lock is acquired
+    LockWait = 53,      // response indicating that lock is not acquired
+    Unlock = 54,        // request to release a lock
+    UnlockResp = 55,    // response indicating that lock is released
+    LockNack = 56,      // NACK for Lock and Unlock (something went wrong)
+    // Application controls
     NewHandle = 101,
     NewHandleResp = 102,
-    Term = 126,
+    // Server controls
+    Term = 126,         // Control message to terminate the server
     Ack = 127,
     Other(u8), // This can be used to handle other opcodes
 }
