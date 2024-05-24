@@ -1,7 +1,14 @@
 import roy_shmem
 import inspect
 import cloudpickle
-from .types.roy_float import create_float_instance
+
+# insert the current directory to the path
+import sys
+import os
+current_directory = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_directory)
+
+from roy_types.roy_float import create_float_instance
 
 ROY_FUNCTION_PREFIX = "roy_ftn"
 
