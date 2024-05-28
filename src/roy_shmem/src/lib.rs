@@ -92,13 +92,41 @@ impl SharedMemory {
         Ok(())
     }
 
+    fn set_handle_object_unlock(&self, handle: String, instance: Vec<u8>, lock: String) -> PyResult<()> {
+        if self.server_connection.is_none() {
+            return Err(PyValueError::new_err("Server connection not initialized"));
+        }
+
+        println!("Setting handle: {}, Length: {}, Lock: {}", handle, instance.len(), lock);
+        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+        let res = socket.write_pickle_unlock(&handle, &instance, &lock);
+        if res.is_err() {
+            return Err(PyValueError::new_err(res.unwrap_err().to_string()));
+        }
+        Ok(())
+    }
+
     fn get_handle_object(&self, handle: String) -> PyResult<Option<Vec<u8>>> {
         if self.server_connection.is_none() {
             return Err(PyValueError::new_err("Server connection not initialized"));
         }
 
         let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
-        let res = socket.read_data_pickle(&handle);
+        let res = socket.read_pickle(&handle);
+        match res {
+            Ok(data) => Ok(Some(data)),
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn get_handle_object_lock(&self, handle: String, lock: String) -> PyResult<Option<Vec<u8>>> {
+        if self.server_connection.is_none() {
+            return Err(PyValueError::new_err("Server connection not initialized"));
+        }
+        println!("Getting handle: {}, Lock: {}", handle, lock);
+
+        let socket: &SharedMemoryClient = self.server_connection.as_ref().unwrap();
+        let res = socket.read_pickle_lock(&handle, &lock);
         match res {
             Ok(data) => Ok(Some(data)),
             Err(_) => Ok(None),

@@ -1,29 +1,19 @@
 import pytest
 import multiprocessing
 import roy
-from roy import connect, start_server, stop_server
 import time
+from roy import connect, initialize_test_env, clean_test_env, Mutex, SharedMemorySingleton
 
 ip_addr_str = "127.0.0.1:50016"
 
-def initialize_env():
-    # start server in a separate process
-    server_process = multiprocessing.Process(target=start_server, args=(ip_addr_str,))
-    server_process.start()
-    time.sleep(1) # wait for the server to start
-    return server_process
-
-def clean_env(server_process):
-    stop_server()
-    server_process.terminate()
-
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def server():
-    server_process = initialize_env()
+    SharedMemorySingleton.reset_instance()
+    server_process = initialize_test_env(ip_addr_str)
     yield server_process
-    clean_env(server_process)
+    clean_test_env(server_process)
 
-@roy.remote
+@roy.remote(lock=Mutex)
 class RoyTestClass:
     def __init__(self, value=None):
         if value is not None:
@@ -37,13 +27,15 @@ class TestMultipleClients:
         connect(ip_addr_str)
 
     def test_my_class(self):
-        handle_key = "test_roy_multiplient.test_handle"
+        handle_key = "test_roy_multiclient.test_handle"
         def client_1():
             my_instance = RoyTestClass("initial_value")
             my_instance.lock()
             assert str(my_instance) != ""
             assert my_instance.value == "initial_value"
             my_instance.value = "new_value"
+            my_float = roy.remote(list([3.14]))
+            my_instance.lists = [my_float, 2, roy.remote(list([123]))]
             # test if the access to non-existing attribute raises AttributeError
             with pytest.raises(AttributeError):
                 print(my_instance.non_existing_value)
@@ -71,6 +63,9 @@ class TestMultipleClients:
             assert my_instance is not None
             assert my_instance.value == "new_value"
             assert my_instance.custom_ftn("arg2") == "arg2"
+            assert my_instance.lists[0] == [3.14]
+            assert my_instance.lists[2][0] == 123
+            print(my_instance.lists)
             my_instance.unlock()
 
         client_process = multiprocessing.Process(target=client_1)
@@ -82,6 +77,16 @@ class TestMultipleClients:
         client_process = multiprocessing.Process(target=client_3)
         client_process.start()
         time.sleep(2)
+        client_process.join()
+        # final checks
+        roy_handle = roy.get_remote_object(handle_key)
+        assert roy_handle is not None
+        my_instance = roy.get_remote_object_with_lock(roy_handle)
+        assert my_instance is not None
+        my_float = my_instance.lists[2].lock()
+        assert my_instance.lists[0][0] == 3.14
+        assert my_instance.lists[2][0] == 123
+        print("TestMultipleClients done")
 
 if __name__ == '__main__':
     pytest.main()

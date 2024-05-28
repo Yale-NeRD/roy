@@ -1,5 +1,5 @@
 use std::net::{UdpSocket, SocketAddr};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::ParseIntError;
 use std::sync::{Arc, Mutex, RwLock};
 use crate::shared_memory::{MemoryState, CacheState, Message, Opcode, ROY_BUFFER_SIZE};
@@ -177,6 +177,9 @@ impl SharedMemoryServer {
                 Opcode::ReadPickle => {
                     Self::handle_read_pickle(&request, pickle_data.clone(), &socket, client_addr)?;
                 },
+                Opcode::Lock => {
+                    Self::handle_read_lock(&request, pickle_data.clone(), &socket, client_addr)?;
+                },
                 Opcode::Write => {
                     println!("Received WRITE message with handle: {}", request.handle);
                     let handle = request.handle.clone();
@@ -197,7 +200,9 @@ impl SharedMemoryServer {
                     // insert new key-value pair
                     let new_state = MemoryState {
                         data: Some(new_data.clone()),
-                        state: CacheState::Modified
+                        state: CacheState::Invalid, // data is written so no permision is granted
+                        sharers: HashSet::new(),
+                        waiters: Vec::new()
                     };
                     locked_data.insert(handle, new_state); 
                     let response = Message { opcode: Opcode::WriteResp, handle: request.handle, data: None };
@@ -207,6 +212,9 @@ impl SharedMemoryServer {
                 },
                 Opcode::WritePickle => {
                     Self::handle_write_pickle(&request, pickle_data.clone(), &socket, client_addr)?;
+                },
+                Opcode::Unlock => {
+                    Self::handle_write_unlock(&request, pickle_data.clone(), &socket, client_addr)?;
                 },
                 _ => {
                     return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid request"));
@@ -250,6 +258,7 @@ impl SharedMemoryServer {
     {
         println!("Received WRITE_PICKLE message with handle: {}", request.handle);
         let handle = request.handle.clone();
+        // TODO: separate this data validity check into a function (check_write_data)
         let new_data = match request.data.clone() {
             Some(new_data) => new_data,
             None => {
@@ -267,7 +276,9 @@ impl SharedMemoryServer {
         // insert new key-value pair
         let new_state = MemoryState {
             data: Some(new_data.clone()),
-            state: CacheState::Modified
+            state: CacheState::Invalid,
+            sharers: HashSet::new(),
+            waiters: Vec::new()
         };
         locked_data.insert(handle, new_state); 
         let response = Message { opcode: Opcode::WriteResp, handle: request.handle.clone(), data: None };
@@ -276,4 +287,113 @@ impl SharedMemoryServer {
         let _res = socket.send_to(&response_bytes, client_addr);
         return Ok(());
     }
+
+    fn handle_read_lock(
+        request: &Message,
+        pickle_data: Arc<Mutex<HashMap<String, MemoryState>>>,
+        socket: &UdpSocket,
+        client_addr: SocketAddr) -> Result<(), std::io::Error>
+    {
+        println!("Received READ_LOCK message with handle: {}", request.handle);
+        // checking the locking method
+        if request.data.is_none() {
+            let response = Message { opcode: Opcode::LockNack, handle: request.handle.clone(), data: Some("Invalid lock request".as_bytes().to_vec()) };
+            let response_bytes = bincode::serialize(&response).unwrap();
+            // println!("Sent response: {:?}", response);
+            socket.send_to(&response_bytes, client_addr)?;
+            return Ok(());
+        }
+        let locking_method = String::from_utf8(request.data.clone().unwrap());
+        println!("Locking method: {:?}", locking_method);
+        let mut pickle_data = pickle_data.lock().unwrap();
+        let response = match pickle_data.get_mut(&request.handle) {
+            Some(state) => {
+                // TODO: set proper state for the lock
+                // Mutex
+                if state.state == CacheState::Invalid {
+                    state.state = CacheState::Modified;
+                    state.sharers.insert(client_addr);
+                    if state.data.is_some() {
+                        Message { opcode: Opcode::LockAcqd, handle: request.handle.clone(), data: Some(state.data.clone().unwrap()) }
+                    } else {
+                        Message { opcode: Opcode::LockNack, handle: request.handle.clone(), data: Some("Key not found".as_bytes().to_vec()) }
+                    }
+                } else {
+                    // Add this client to the waiting list
+                    // - check if the client is already in the waiting list\
+                    if !state.waiters.contains(&client_addr) {
+                        state.waiters.push(client_addr);
+                    }
+                    Message { opcode: Opcode::LockWait, handle: request.handle.clone(), data: Some("".as_bytes().to_vec()) }
+                }
+            },
+            None => {
+                Message { opcode: Opcode::LockNack, handle: request.handle.clone(), data: Some("Key not found".as_bytes().to_vec()) }
+            }
+        };
+        let response_bytes = bincode::serialize(&response).unwrap();
+        // println!("Sent response: {:?}", response);
+        socket.send_to(&response_bytes, client_addr)?;
+        Ok(())
+    }
+
+    fn handle_write_unlock (
+        request: &Message,
+        pickle_data: Arc<Mutex<HashMap<String, MemoryState>>>,
+        socket: &UdpSocket,
+        client_addr: SocketAddr) -> Result<(), std::io::Error> 
+    {
+        println!("Received WRITE_UNLOCK message with handle: {}", request.handle);
+        let handle = request.handle.clone();
+        let new_data = match request.data.clone() {
+            Some(new_data) => new_data,
+            None => {
+                // send WriteNack
+                let response = Message {
+                    opcode: Opcode::LockNack,
+                    handle: request.handle.clone(),
+                    data: Some("Invalid data to insert".as_bytes().to_vec()) };
+                let response_bytes = bincode::serialize(&response).unwrap();
+                let _res = socket.send_to(&response_bytes, client_addr);
+                return Ok(());
+            }
+        };
+        let mut locked_data = pickle_data.lock().unwrap();
+        // get the current state as mutable
+        let state = locked_data.get_mut(&handle);
+        if state.is_none() {
+            // insert new key-value pair
+            let new_state = MemoryState {
+                data: Some(new_data.clone()),
+                state: CacheState::Invalid,
+                sharers: HashSet::new(),
+                waiters: Vec::new()
+            };
+            locked_data.insert(handle, new_state); 
+        } else {
+            let state = state.unwrap();
+            state.data = Some(new_data.clone());
+            if state.sharers.contains(&client_addr) {
+                state.sharers.remove(&client_addr);
+                if state.state == CacheState::Modified {
+                    state.state = CacheState::Invalid;
+                }
+                // Check waiter list and notify the next client
+                if state.waiters.len() > 0 {
+                    let next_client = state.waiters.remove(0);
+                    let response = Message { opcode: Opcode::LockAcqd, handle: request.handle.clone(), data: Some(state.data.clone().unwrap()) };
+                    let response_bytes = bincode::serialize(&response).unwrap();
+                    // println!("Sent response: {:?}", response);
+                    let _res = socket.send_to(&response_bytes, next_client);
+                    println!("Notified the next client: {:?}, data: {}", next_client, state.data.clone().unwrap().len());
+                }
+            }
+        }
+        let response = Message { opcode: Opcode::UnlockResp, handle: request.handle.clone(), data: None };
+        let response_bytes = bincode::serialize(&response).unwrap();
+        // println!("Sent response: {:?}", response);
+        let _res = socket.send_to(&response_bytes, client_addr);
+        return Ok(());
+    }
+
 }

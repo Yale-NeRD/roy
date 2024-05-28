@@ -11,3 +11,6 @@ make
 ```bash
 make test
 ```
+
+## Reference
+- The locking-based programming model is inspired by [GCP](https://arxiv.org/abs/2301.02576).

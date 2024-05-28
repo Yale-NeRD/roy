@@ -1,8 +1,11 @@
 
 use serde::{Serialize, Deserialize};
+use std::net::SocketAddr;
+use std::collections::HashSet;
 
 pub const ROY_BUFFER_SIZE: usize = 1024 * 1024;
 
+#[derive(Debug, PartialEq)]
 pub enum CacheState {
     Shared,
     Modified,
@@ -13,12 +16,13 @@ pub enum CacheState {
 pub struct MemoryState {
     pub data: Option<Vec<u8>>,
     pub state: CacheState,
-    
+    pub sharers: HashSet<SocketAddr>,
+    pub waiters: Vec<SocketAddr>
 }
 
 // Messages
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
-#[repr(u8)]
+#[repr(u16)]
 pub enum Opcode {
     // Initialize the connection
     Init = 1,
@@ -44,7 +48,7 @@ pub enum Opcode {
     // Server controls
     Term = 126,         // Control message to terminate the server
     Ack = 127,
-    Other(u8), // This can be used to handle other opcodes
+    Other(u16), // This can be used to handle other opcodes
 }
 
 #[derive(Serialize, Deserialize, Debug)]

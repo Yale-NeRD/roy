@@ -72,7 +72,7 @@ impl SharedMemoryClient {
         })
     }
 
-    pub fn read_data_pickle(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
+    pub fn read_pickle(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
         self.send_message(Opcode::ReadPickle, key, None)?;
         let msg = self.recv_message()?;
         if msg.opcode != Opcode::ReadResp || !msg.data.is_some(){
@@ -81,6 +81,29 @@ impl SharedMemoryClient {
                 "Invalid response"));
         }
         Ok(msg.data.unwrap())
+    }
+
+    pub fn read_pickle_lock(&self, key: &str, lock: &str) -> Result<Vec<u8>, std::io::Error> {
+        self.send_message(Opcode::Lock, key, Some(&lock.as_bytes().to_vec()))?;
+        let msg = self.recv_message()?;
+        if msg.opcode == Opcode::LockAcqd && msg.data.is_some() {
+            return Ok(msg.data.unwrap());
+        }
+        else if msg.opcode == Opcode::LockWait {
+            println!("Waiting for lock...");
+            // TODO: wait to get the lock
+            let msg = self.recv_message()?;
+            if msg.opcode != Opcode::LockAcqd || !msg.data.is_some() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Invalid response"));
+            }
+            return Ok(msg.data.unwrap());
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid response"));
+        }
     }
 
     fn read_data_bytes(&self, key: &str) -> Result<Vec<u8>, std::io::Error> {
@@ -106,6 +129,15 @@ impl SharedMemoryClient {
         self.send_message(opcode, key, Some(value))?;
         let resp = self.recv_message()?;
         if resp.opcode != Opcode::WriteResp {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
+        }
+        Ok(())
+    }
+            
+    pub fn write_pickle_unlock(&self, key: &str, value: &Vec<u8>, lock: &str) -> Result<(), std::io::Error> {
+        self.send_message(Opcode::Unlock, key, Some(value))?;
+        let resp = self.recv_message()?;
+        if resp.opcode != Opcode::UnlockResp {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid response"));
         }
         Ok(())

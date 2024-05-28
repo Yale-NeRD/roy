@@ -1,6 +1,8 @@
 import roy_shmem
 import inspect
 import cloudpickle
+import multiprocessing
+import time
 
 # insert the current directory to the path
 import sys
@@ -9,21 +11,45 @@ current_directory = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_directory)
 
 from roy_types.roy_float import create_float_instance
+from roy_types.roy_locks import RoyLock, Mutex
 
 ROY_FUNCTION_PREFIX = "roy_ftn"
 
 class SharedMemorySingleton:
     _instance = None
+
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = roy_shmem.SharedMemory()
+            cls._instance = SharedMemorySingleton._init_instance()
         return cls._instance
+    @classmethod
+    def _init_instance(self):
+        return roy_shmem.SharedMemory()
+
+    @classmethod
+    def reset_instance(cls):
+        cls._instance = None
+
 
 def set_remote_object(handle: str, instance):
     SharedMemorySingleton().set_handle_object(handle, cloudpickle.dumps(instance))
 
-def get_remote_object(handle):
-    data = SharedMemorySingleton().get_handle_object(handle)
+def _set_remote_handle_unlock(handle: str, instance, lock):
+    assert inspect.isclass(lock) and issubclass(lock, RoyLock), "Locking mechanism must be a subclass of RoyLock"
+    SharedMemorySingleton().set_handle_object_unlock(handle, cloudpickle.dumps(instance), lock.__name__)
+
+def _get_remote_object(handle, lock=None):
+    '''
+    Get the object from the shared memory
+    @handle: handle of the object
+    @lock: lock mechanism to be used; if None, no lock is used (copying the object out-of-sync)
+    '''
+    if lock is None:
+        data = SharedMemorySingleton().get_handle_object(handle)
+    else:
+        # check if lock is class not instance
+        assert inspect.isclass(lock) and issubclass(lock, RoyLock), "Locking mechanism must be a subclass of RoyLock"
+        data = SharedMemorySingleton().get_handle_object_lock(handle, lock.__name__)
     if data is None:
         return None
     # Convert list of bytes to a byte string
@@ -33,10 +59,20 @@ def get_remote_object(handle):
     # TODO: rewire remote_proxy
     return loaded
 
+def get_remote_object(handle):
+    return _get_remote_object(handle)
+
 def get_remote_object_with_lock(handle):
-    return get_remote_object(handle).lock()
+    target = get_remote_object(handle)
+    return target.lock()
+
+# TODO: provide a way to get the object along with the lock
+# It is currently not possible since the type of the lock is not known
+# before getting the object. We may let it use the default lock method
+# for each lock type, and later upgrade/downgrade the permission.
 
 def patch_builtin_class(instance):
+    # This is a modification/wrapper for immutable built-in objects
     # print("Patch built-in class:", dir(instance), isinstance(instance, float))
     if isinstance(instance, float):
         instance = create_float_instance(instance)
@@ -54,45 +90,45 @@ class RemoteProxy:
     def get_ray_handle(self):
         return self._key
 
-    def get_attribute_from_shmem(self, name):
-        print(f"__getattr__({name})")
-        try:
-            if name == "_default_attrs" or name in self._default_attrs:
-                # return proxy's attribute
-                if name in self.__dict__:
-                    return self.__dict__[name]
-                return getattr(self, name)
-            # TODO: caching support
+    # def get_attribute_from_shmem(self, name):
+    #     print(f"__getattr__({name})")
+    #     try:
+    #         if name == "_default_attrs" or name in self._default_attrs:
+    #             # return proxy's attribute
+    #             if name in self.__dict__:
+    #                 return self.__dict__[name]
+    #             return getattr(self, name)
+    #         # TODO: caching support
 
-            # Normal attirbute
-            attr = get_remote_object(f"{self._key}.{name}")
-            if attr is None:
-                raise KeyError()
-            if callable(attr):
-                raise NotImplementedError("Functions cannot be fetched dynamically")
+    #         # Normal attirbute
+    #         attr = get_remote_object(f"{self._key}.{name}")
+    #         if attr is None:
+    #             raise KeyError()
+    #         if callable(attr):
+    #             raise NotImplementedError("Functions cannot be fetched dynamically")
 
-            # print(f"Get attr: {attr}")
-            return attr
-        except KeyError:
-            raise AttributeError(
-                f"{type(self._instance.wrapped_obj)} object has no attribute '{name}'"\
-                if self._instance.__dict__.get('wrapped_obj') is not None\
-                else f"Wrapped instance in {type(self._instance)} has no attribute '{name}'"
-            )
+    #         # print(f"Get attr: {attr}")
+    #         return attr
+    #     except KeyError:
+    #         raise AttributeError(
+    #             f"{type(self._instance.wrapped_obj)} object has no attribute '{name}'"\
+    #             if self._instance.__dict__.get('wrapped_obj') is not None\
+    #             else f"Wrapped instance in {type(self._instance)} has no attribute '{name}'"
+    #         )
 
-    def set_attribute_to_shmem(self, name, value):
-        print(f"__setattr__({name}, '{value}')")
-        if name == "_default_attrs" or name in self._default_attrs:
-            setattr(self, name, value)
-        else:
-            # TODO: add support for functions
-            if not callable(value):
-                set_remote_object(f"{self._key}.{name}", value)
-            else:
-                # cloudpickle the function and send it to the shared memory
-                raise NotImplementedError("Functions cannot be added dynamically")
+    # def set_attribute_to_shmem(self, name, value):
+    #     print(f"__setattr__({name}, '{value}')")
+    #     if name == "_default_attrs" or name in self._default_attrs:
+    #         setattr(self, name, value)
+    #     else:
+    #         # TODO: add support for functions
+    #         if not callable(value):
+    #             set_remote_object(f"{self._key}.{name}", value)
+    #         else:
+    #             # cloudpickle the function and send it to the shared memory
+    #             raise NotImplementedError("Functions cannot be added dynamically")
 
-def create_wrapper_class(cls, roy_handle=None):
+def create_wrapper_class(cls, roy_handle=None, lock=Mutex):
     class RoyRemoteObject(cls):
         def __init__(self, *args, new_handle=None, **kwargs):
             nonlocal cls
@@ -103,8 +139,9 @@ def create_wrapper_class(cls, roy_handle=None):
             else:
                 handle = get_remote_handle(cls.__name__)
             # set remote_proxy
-            self.__dict__['remote_proxy'] = RemoteProxy(key=handle, instance=self)
-            self.__dict__['roy_handle'] = handle
+            self.remote_proxy = RemoteProxy(key=handle, instance=self)
+            self.roy_handle = handle
+            self.roy_lock = lock
             # self.__dict__['wrapped_obj'] = cls(*args, **kwargs)
             # print("Wrapped object:", self.__dict__['wrapped_obj'], ", Id:", id(self.__dict__['wrapped_obj'].__class__))
             # print("Class:", cls, ", Id:", id(cls))
@@ -116,14 +153,13 @@ def create_wrapper_class(cls, roy_handle=None):
                     pass
             set_remote_object(handle, self)
 
-        # TODO: dummy lock, unlock with only data not locking
         def lock(self):
-            recreate_remote_object(self, get_remote_object(self.__dict__['roy_handle']))
+            recreate_remote_object(self, _get_remote_object(self.roy_handle, self.roy_lock))
             # print("Locked: ", self)
             return self
 
         def unlock(self):
-            set_remote_object(self.__dict__['roy_handle'], self)
+            _set_remote_handle_unlock(self.roy_handle, self, lock=self.roy_lock)
             return self
 
     # return create_wrapped_class(obj, handle)
@@ -165,6 +201,8 @@ def recreate_remote_object(obj, remote_obj):
     @remote_obj: source remote instance
     @return: obj of which attributes are updated with remote_obj
     '''
+    if hasattr(obj, '__dict__') and hasattr(remote_obj, '__dict__'):
+        obj.__dict__.update(remote_obj.__dict__)
     # assert remote_obj.__dict__.get('wrapped_obj') is not None
     print("Recreate remote object", obj, "<-", remote_obj)
     if isinstance(obj, list):
@@ -213,21 +251,36 @@ def recreate_remote_object(obj, remote_obj):
             raise NotImplementedError(f"Unsupported type ({obj.__class__}) for remote object")
     return obj
 
-def _remote_decorator(obj, _handle=None):
+def _remote_decorator(obj, _handle=None, *args, **kwargs):
+    # print("Remote decorator:", obj, args, kwargs)
+    if kwargs.get('lock') is not None:
+        assert issubclass(kwargs['lock'], RoyLock), "Locking mechanism must be a subclass of RoyLock"
+        print(f"Locking mechanism: {kwargs['lock']}")
+    else:
+        kwargs['lock'] = Mutex
+        print(f"Use the default locking mechanism: {kwargs['lock']}")
     # error nothing has been specified
     if inspect.isfunction(obj):
         raise NotImplementedError("Function is not supported yet")
     elif inspect.isclass(obj):
-        return create_wrapper_class(obj)
+        return create_wrapper_class(obj, lock=kwargs['lock'])
     elif obj is not type:
         print("Create remote object from instance")
         # now it is an instance
-        cls = create_wrapper_class(obj.__class__)
+        cls = create_wrapper_class(obj.__class__, lock=kwargs['lock'])
         return create_remote_object(obj, cls)
     else:
         raise TypeError("Unsupported type for @remote decorator")
 
-def remote(obj):
+def remote(obj=None, *args, **kwargs):
+    # print("Remote decorator:", obj, args, kwargs)
+    if obj is None:
+        # A wrapper to pass args and kwargs to the decorator
+        def _remote(obj):
+            nonlocal args
+            nonlocal kwargs
+            return _remote_decorator(obj, None, *args, **kwargs)
+        return _remote
     return _remote_decorator(obj, None)
 
 def set_remote(instance):
@@ -247,4 +300,18 @@ def start_server(binding_address: str = "127.0.0.1:50015"):
     SharedMemorySingleton().start_server(binding_address)
 
 def stop_server():
-    SharedMemorySingleton().stop_server()
+    try:
+        SharedMemorySingleton().stop_server()
+    except ConnectionRefusedError:
+        pass    # ignore the error if the server is not running
+
+def initialize_test_env(ip_addr_str):
+    # start server in a separate process
+    server_process = multiprocessing.Process(target=start_server, args=(ip_addr_str,))
+    server_process.start()
+    time.sleep(1) # wait for the server to start
+    return server_process
+
+def clean_test_env(server_process):
+    stop_server()
+    server_process.terminate()
