@@ -294,7 +294,7 @@ impl SharedMemoryServer {
         socket: &UdpSocket,
         client_addr: SocketAddr) -> Result<(), std::io::Error>
     {
-        println!("Received READ_LOCK message with handle: {}", request.handle);
+        println!("Received READ_LOCK message with handle: {} from {}", request.handle, client_addr);
         // checking the locking method
         if request.data.is_none() {
             let response = Message { opcode: Opcode::LockNack, handle: request.handle.clone(), data: Some("Invalid lock request".as_bytes().to_vec()) };

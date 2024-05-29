@@ -58,6 +58,11 @@ class TestMutexLocks:
 
         # Try to get the object with lock and modify,
         # but it should be after unlock inside lock_and_update
+        # Getting value without lock (non-blocking and get the stale value)
+        my_instance = roy.get_remote_object(roy_handle)
+        assert my_instance is not None
+        assert my_instance.value == "initial_value"
+        # Getting value with lock (blocking and get the up-to-date value)
         my_instance = roy.get_remote_object_with_lock(roy_handle)
         assert my_instance is not None
         assert my_instance.value == "new_value"

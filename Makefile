@@ -1,7 +1,7 @@
 .PHONY: help build develop test clean
 
 test: build_py pydep
-	@cd src/pyroy && python -m pytest -v -s
+	@cd src/pyroy && python -m pytest -v
 
 pydep:
 	@pip install -r src/pyroy/requirements.txt
