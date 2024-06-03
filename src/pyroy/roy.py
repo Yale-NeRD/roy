@@ -14,6 +14,7 @@ from roy_types.roy_float import create_float_instance
 from roy_types.roy_locks import RoyLock, Mutex
 
 ROY_FUNCTION_PREFIX = "roy_ftn"
+ROY_DEFAULT_LOCAL_ADDR = "127.0.0.1:50015"
 
 class SharedMemorySingleton:
     _instance = None
@@ -87,7 +88,7 @@ class RemoteProxy:
         self._function_dict = {}
         self._instance = instance
 
-    def get_ray_handle(self):
+    def get_roy_handle(self):
         return self._key
 
     # def get_attribute_from_shmem(self, name):
@@ -153,9 +154,19 @@ def create_wrapper_class(cls, roy_handle=None, lock=Mutex):
                     pass
             set_remote_object(handle, self)
 
+        def get_handle(self):
+            return self.roy_handle
+
+        def __enter__(self):
+            locked_obj = self.lock()
+            print("Locked object:", locked_obj, flush=True)
+            return locked_obj
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self.unlock()
+
         def lock(self):
             recreate_remote_object(self, _get_remote_object(self.roy_handle, self.roy_lock))
-            # print("Locked: ", self)
             return self
 
         def unlock(self):
@@ -213,37 +224,37 @@ def recreate_remote_object(obj, remote_obj):
         obj.update(remote_obj)
     elif isinstance(obj, tuple):
         # Tuples are immutable, replace the wrapped_obj
-        print("Immutable class(Tuple) cannot be locked")
+        print("Immutable class (Tuple) cannot be locked")
     elif isinstance(obj, set):
         obj.clear()
         obj.update(remote_obj)
     elif isinstance(obj, frozenset):
         # Frozensets are immutable, replace the wrapped_obj
-        print("Immutable class(Frozenset) cannot be locked")
+        print("Immutable class (Frozenset) cannot be locked")
     elif isinstance(obj, str):
         # Strings are immutable, replace the wrapped_obj
-        print("Immutable class(String) cannot be locked")
+        print("Immutable class (String) cannot be locked")
     elif isinstance(obj, int):
         # Integers are immutable, replace the wrapped_obj
-        print("Immutable class(Integer) cannot be locked")
+        print("Immutable class (Integer) cannot be locked")
     elif isinstance(obj, float):
         # Floats are immutable, replace the wrapped_obj
-        print("Immutable class(Float) cannot be locked")
+        print("Immutable class (Float) cannot be locked.")
     elif isinstance(obj, complex):
         # Complex numbers are immutable, replace the wrapped_obj
-        print("Immutable class(Complex) cannot be locked")
+        print("Immutable class (Complex) cannot be locked")
     elif isinstance(obj, bool):
         # Booleans are immutable, replace the wrapped_obj
-        print("Immutable class(Boolean) cannot be locked")
+        print("Immutable class (Boolean) cannot be locked")
     elif isinstance(obj, bytes):
         # Bytes are immutable, replace the wrapped_obj
-        print("Immutable class(Bytes) cannot be locked")
+        print("Immutable class (Bytes) cannot be locked")
     elif isinstance(obj, bytearray):
         obj.clear()
         obj.extend(remote_obj)
     elif isinstance(obj, memoryview):
         # Memoryview objects are immutable, replace the wrapped_obj
-        print("Immutable class(Memoryview) cannot be locked")
+        print("Immutable class (Memoryview) cannot be locked")
     else:
         # If it's not a built-in type and __dict__ is not avilable,
         # it's unsupported
@@ -293,10 +304,10 @@ def get_remote(handle: str):
     # TODO: check the type to see if it is a function
 
 # connect to the server
-def connect(server_address: str = "127.0.0.1:50015"):
+def connect(server_address: str = ROY_DEFAULT_LOCAL_ADDR):
     SharedMemorySingleton().connect_server(server_address)
 
-def start_server(binding_address: str = "127.0.0.1:50015"):
+def start_server(binding_address: str = ROY_DEFAULT_LOCAL_ADDR):
     SharedMemorySingleton().start_server(binding_address)
 
 def stop_server():
@@ -305,7 +316,7 @@ def stop_server():
     except ConnectionRefusedError:
         pass    # ignore the error if the server is not running
 
-def initialize_test_env(ip_addr_str):
+def initialize_test_env(ip_addr_str = ROY_DEFAULT_LOCAL_ADDR):
     # start server in a separate process
     server_process = multiprocessing.Process(target=start_server, args=(ip_addr_str,))
     server_process.start()

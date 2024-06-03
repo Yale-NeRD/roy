@@ -1,5 +1,6 @@
-transformers
-torch==2.3.0
-accelerate
-optimum
-auto-gptq
+# transformers
+# torch==2.3.0
+# accelerate
+# optimum
+# auto-gptq
+llama-cpp-python
