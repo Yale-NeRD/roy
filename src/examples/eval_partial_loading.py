@@ -9,8 +9,14 @@ script_dir = os.path.dirname(__file__)
 parent_directory = os.path.dirname(script_dir)
 sys.path.append(parent_directory)
 sys.path.append(parent_directory + '/cpproy')
+sys.path.append(parent_directory + '/cythonroy')
 import roy_shmem
 from cpproy import roylist
+from cythonroy import roylist as cythonroylist
+
+num_nodes = int(1e7)
+num_repeat = 3
+num_workers = 4
 
 # class Roylist:
 #     def __init__(self, value=None, chunk_size=int(1e6)):
@@ -76,7 +82,7 @@ class Worker:
         # print(os.environ.get('PYTHONPATH', ''), flush=True)
         pass
 
-    def search(self, idx, node_ref, target_value, start_pos, range_pos):
+    def search(self, idx, node_ref, target_value, start_pos, range_pos, measure_threshold_ns=500):
         node_ref = node_ref[0]
         start_time = time.time()
         self.node_list = ray.get(node_ref)
@@ -84,18 +90,36 @@ class Worker:
             # C++ version
             # self.node_list = roylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
             # Rust version
-            self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
+            # self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
+            # self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list), idx)  # with prefetching
+            # Cython
+            self.node_list = cythonroylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
         end_time = time.time()
         print(f"Time remote loading: {end_time - start_time} sec", flush=True)
 
+        total_time = 0
+        count = 0
+
         for i in range(start_pos, start_pos + range_pos):
+            start_time = time.perf_counter_ns()
             node_id = self.node_list[i]
+            end_time = time.perf_counter_ns()
+            time_per_access = end_time - start_time
+            if time_per_access <= measure_threshold_ns:
+                total_time += time_per_access
+                count += 1
+
             if node_id == target_value:
                 # print(f"Found target node: {node_id}", flush=True)
-                # time measurement ends
-                return i
+                break
 
-def list_search_partial(node_list, target_value, num_workers=4):
+        if isinstance(self.node_list, roy_shmem.Roylist):
+            print(f"Access latency in rust: {self.node_list.get_access_latency()}", flush=True)
+
+        average_time = total_time / count if count > 0 else 0
+        return average_time
+
+def list_search_partial(node_list, target_value, num_workers=num_workers):
     # Initialize the shared state actor
     # node_list_ref = ray.put(node_list)
     start_time = time.time()
@@ -116,10 +140,11 @@ def list_search_partial(node_list, target_value, num_workers=4):
     results = [result for result in ray.get(worker_futures) if result is not None]
     end_time = time.time()
     print(f"Time taken: {end_time - start_time} sec", flush=True)
+    print(f"Avg time: {sum(results) / len(results)} ns", flush=True)
     return (end_time - start_time) * 1e6    # in microseconds
     # return sum(results) / len(results)
 
-def list_search(node_list, target_value, num_workers=4):
+def list_search(node_list, target_value, num_workers=num_workers):
     start_time = time.time()
     # Initialize the shared state actor
     node_list_ref = ray.put(node_list)
@@ -137,6 +162,7 @@ def list_search(node_list, target_value, num_workers=4):
     results = [result for result in ray.get(worker_futures) if result is not None]
     end_time = time.time()
     print(f"Time taken: {end_time - start_time} sec", flush=True)
+    print(f"Avg time: {sum(results) / len(results)} ns", flush=True)
     return (end_time - start_time) * 1e6    # in microseconds
     # return sum(results) / len(results)
 
@@ -148,11 +174,11 @@ def list_search(node_list, target_value, num_workers=4):
 #         chunk_ref_list.append(ray.put(chunk))
 #     return roylist.Roylist(chunk_ref_list, chunk_size, len(value))
 
-def list_search_roy(node_list, target_value, num_workers=4):
+def list_search_roy(node_list, target_value, num_workers=num_workers):
     start_time = time.time()
     # Initialize the shared state actor
     # roy_list = create_roy_list(node_list, 4 * 1024)
-    roy_list = Roylist(node_list, 512 * 1024)
+    roy_list = Roylist(node_list, len(node_list) // num_workers)
     print(f"Roylist: {len(roy_list)}")
     node_list_ref = ray.put(roy_list)
     end_time = time.time()
@@ -169,16 +195,15 @@ def list_search_roy(node_list, target_value, num_workers=4):
     results = [result for result in ray.get(worker_futures) if result is not None]
     end_time = time.time()
     print(f"Time taken: {end_time - start_time} sec", flush=True)
+    print(f"Avg time: {sum(results) / len(results)} ns", flush=True)
     return (end_time - start_time) * 1e6    # in microseconds
     # return sum(results) / len(results)
 
 # Example usage
 if __name__ == "__main__":
-    num_nodes = int(1e7)
-    num_repeat = 3
-    ray.init(runtime_env={"py_modules": [parent_directory + "/cpproy"]})
-    # node_list = ["12345678901234567890123456789012345678901234567890123456789012341234567890123456789012345678901234567890123456789012345678901234" for i in range(num_nodes)]
-    node_list = [float(i) for i in range(num_nodes)]
+    ray.init(runtime_env={"py_modules": [parent_directory + "/cpproy", parent_directory + "/cythonroy"]})
+    node_list = ["12345678901234567890123456789012345678901234567890123456789012341234567890123456789012345678901234567890123456789012345678901234" for i in range(num_nodes)]
+    # node_list = [float(i) for i in range(num_nodes)]
     list_search_time_partial = ([list_search_partial(node_list, num_nodes // 2) for _ in range(num_repeat)])
     list_search_time = ([list_search(node_list, num_nodes // 2) for _ in range(num_repeat)])
     list_search_time_roy = ([list_search_roy(node_list, num_nodes // 2) for _ in range(num_repeat)])
@@ -203,8 +228,8 @@ partitioned [1416816.314] us
 non-part-ed [2736505.349] us
 on-demand [2344455.004] us
 
-# rust
-partitioned [1443634.590] us
-non-part-ed [2712038.358] us
-on-demand [1794579.029] us
+# rust 4 workers
+partitioned [1397961.696] us
+non-part-ed [2701779.127] us
+on-demand [1770343.701] us
 '''

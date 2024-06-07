@@ -1,5 +1,7 @@
 .PHONY: help build develop test clean
 
+build: build_py pydep
+
 test: build_py pydep
 	@cd src/pyroy && python -m pytest -v
 

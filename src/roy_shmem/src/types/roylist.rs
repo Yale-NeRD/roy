@@ -9,6 +9,8 @@ pub struct Roylist {
     len: usize,
     num_chunks: usize,
     chunk_list: Vec<Vec<PyObject>>,
+    access_latency: f64,
+    access_count: usize,
 }
 
 #[pymethods]
@@ -48,6 +50,8 @@ impl Roylist {
             len,
             num_chunks,
             chunk_list,
+            access_latency: 0.0,
+            access_count: 0,
         })
     }
 
@@ -56,14 +60,33 @@ impl Roylist {
             return Err(PyIndexError::new_err("Index out of range"));
         }
 
+        // let mut fetch: bool = false;
+        // let start = std::time::Instant::now();
         let chunk_idx = idx / self.chunk_size;
         if self.chunk_list[chunk_idx].len() == 0 {
             let ray = py.import_bound("ray")?;
-            let chunk = ray.call_method1("get", (self.chunk_ref_list[chunk_idx].clone_ref(py),))?;
-            let chunk: Vec<PyObject> = chunk.extract()?;
+            let chunk_ref = self.chunk_ref_list[chunk_idx].clone_ref(py);
+            let chunk: Vec<PyObject> = ray.call_method1("get", (chunk_ref,))?.extract()?;
             self.chunk_list[chunk_idx] = chunk;
+            // fetch = true;
         }
-        Ok(self.chunk_list[chunk_idx][idx % self.chunk_size].clone())
+        // let result = self.chunk_list[chunk_idx][idx % self.chunk_size].clone_ref(py);
+        // if !fetch {
+        //     self.access_latency += start.elapsed().as_secs_f64();
+        //     self.access_count += 1;
+        // }
+        // NOTE) result was 50 ns
+        // Ok(result)
+
+        //
+        Ok(self.chunk_list[chunk_idx][idx % self.chunk_size].clone_ref(py))
+    }
+
+    pub fn get_access_latency(&self) -> f64 {
+        if self.access_count == 0 {
+            return 0.0;
+        }
+        self.access_latency / self.access_count as f64
     }
 }
 
