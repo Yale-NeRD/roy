@@ -13,7 +13,7 @@ build_all: build_py build_ctrl
 # 	@cd src/roy_ctrl && python setup.py sdist bdist_wheel && pip install .
 
 build_py:
-	@cd src/roy_shmem && maturin develop
+	@cd src/roy_shmem && maturin develop --release
 
 build_ctrl:
 	@echo "Skip roy_ctrl"

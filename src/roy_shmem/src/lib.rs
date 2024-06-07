@@ -1,11 +1,14 @@
 mod shared_memory;
 mod shared_memory_server;
 mod shared_memory_client;
+mod types;
 
 use pyo3::prelude::*;
 use pyo3::Bound;
 use pyo3::exceptions::PyValueError;
-use serde::de::value;
+// use serde::de::value;
+use types::Roylist;
+use types::optimized_getitem;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use shared_memory_server::SharedMemoryServer;
@@ -36,6 +39,7 @@ impl SharedMemory {
         if err.is_err() {
             return Err(PyValueError::new_err(err.unwrap_err().to_string()));
         }
+
         Ok(())
     }
 
@@ -168,9 +172,38 @@ impl SharedMemory {
     // }
 }
 
+#[pyfunction]
+fn call_ray_get_ftn(py: Python, ray: &PyAny, remote_function: &PyAny) -> PyResult<()> {
+    // Call the remote function with an argument
+    let object_ref = remote_function.call1((10,))?;
+
+    // Get the result using `ray.get`
+    let result = ray.call_method1("get", (object_ref,))?;
+
+    // Extract the result value
+    let result_value: i32 = result.extract()?;
+    println!("Result from ray.get: {}", result_value);
+
+    Ok(())
+}
+
+#[pyfunction]
+fn call_ray_get(py: Python, ray: &PyAny, node_list_ref: &PyAny) -> PyResult<()> {
+    // Get the result using `ray.get`
+    let result = ray.call_method1("get", (node_list_ref,))?;
+
+    // Extract the result value as a Vec<i32>
+    let result_value: Vec<i32> = result.extract()?;
+    // println!("Result from ray.get: {:?}", result_value);
+    Ok(())
+}
+
 #[pymodule]
 #[allow(dead_code)]
 fn roy_shmem(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SharedMemory>()?;
+    // m.add_function(wrap_pyfunction!(call_ray_get, m)?)?;
+    m.add_function(wrap_pyfunction!(optimized_getitem, m)?)?;
+    m.add_class::<Roylist>()?;
     Ok(())
 }

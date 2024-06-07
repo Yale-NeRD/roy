@@ -326,3 +326,6 @@ def initialize_test_env(ip_addr_str = ROY_DEFAULT_LOCAL_ADDR):
 def clean_test_env(server_process):
     stop_server()
     server_process.terminate()
+
+def get_roy_test(ray, obj_ref):
+    roy_shmem.call_ray_get(ray, obj_ref)
