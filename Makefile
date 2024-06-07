@@ -1,6 +1,6 @@
 .PHONY: help build develop test clean
 
-build: build_py pydep
+build: build_pyx build_py pydep
 
 test: build_py pydep
 	@cd src/pyroy && python -m pytest -v
@@ -13,6 +13,9 @@ build_all: build_py build_ctrl
 
 # install_ctrl: build_ctrl
 # 	@cd src/roy_ctrl && python setup.py sdist bdist_wheel && pip install .
+
+build_pyx:
+	@cd src/cythonroy && make
 
 build_py:
 	@cd src/roy_shmem && maturin develop --release

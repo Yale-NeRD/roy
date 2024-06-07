@@ -46,15 +46,39 @@ cdef class Roylist:
         cdef int chunk_offset = idx % self.chunk_size
 
         if not self.chunk_list[chunk_idx]:
-            self._fetch_chunk(chunk_idx)
+            self._fetch_chunk_(chunk_idx)
 
         return self.chunk_list[chunk_idx][chunk_offset]
 
-    cdef void _fetch_chunk(self, int chunk_idx):
+    cdef void _fetch_chunk_(self, int chunk_idx):
         chunk = ray.get(self.chunk_ref_list[chunk_idx])
         self.chunk_list[chunk_idx] = chunk
+
+    def __reduce__(self):
+        return (self.__class__, (self.chunk_ref_list, self.chunk_size, self.length, -1))
+
+    '''
+    @classmethod
+    def reconstruct(cls, chunk_ref_list, chunk_size, length, idx):
+        obj = cls.__new__(cls)  # create a new instance without calling __init__
+        obj.chunk_ref_list = chunk_ref_list
+        obj.chunk_size = chunk_size
+        obj.length = length
+        obj.num_chunks = len(chunk_ref_list)
+        obj.chunk_list = [[] for _ in range(obj.num_chunks)]
+        obj.access_latency = 0.0
+        obj.access_count = 0
+
+        # Preload
+        if idx != -1:
+            if not obj.chunk_list[idx]:
+                chunk = ray.get(obj.chunk_ref_list[idx])
+                obj.chunk_list[idx] = chunk
+
+        return obj
 
     def get_access_latency(self):
         if self.access_count == 0:
             return 0.0
         return self.access_latency / self.access_count
+    '''

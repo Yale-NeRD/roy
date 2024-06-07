@@ -11,8 +11,8 @@ sys.path.append(parent_directory)
 sys.path.append(parent_directory + '/cpproy')
 sys.path.append(parent_directory + '/cythonroy')
 import roy_shmem
-from cpproy import roylist
-from cythonroy import roylist as cythonroylist
+# from cpproy import roylist
+from cythonroy import roylist
 
 num_nodes = int(1e7)
 num_repeat = 3
@@ -47,53 +47,54 @@ num_workers = 4
 #         # return self.chunk_list[idx // self.chunk_size][idx % self.chunk_size]
 #         # return self.chunk_list[idx]
 
-from roy_shmem import optimized_getitem
-class Roylist:
-    def __init__(self, value=None, chunk_size=int(1e6)):
-        assert value is not None, "Value cannot be None"
-        assert isinstance(value, list), f"Only list is supported — given type: {type(value)}"
-        assert chunk_size > 0, "Chunk size must be greater than 0"
-        assert ray.is_initialized(), "Ray must be initialized"
+# from roy_shmem import optimized_getitem
+# class Roylist:
+#     def __init__(self, value=None, chunk_size=int(1e6)):
+#         assert value is not None, "Value cannot be None"
+#         assert isinstance(value, list), f"Only list is supported — given type: {type(value)}"
+#         assert chunk_size > 0, "Chunk size must be greater than 0"
+#         assert ray.is_initialized(), "Ray must be initialized"
 
-        self.chunk_ref_list = []
-        self.chunk_size = int(chunk_size)
-        for i in range(0, len(value), chunk_size):
-            chunk = value[i:i + chunk_size]
-            self.chunk_ref_list.append(ray.put(chunk))
-        self.__length__ = len(value)
-        self.__numchunks__ = len(self.chunk_ref_list)
-        self.chunk_list = [None for _ in self.chunk_ref_list]
-        print("Total chunks:", self.__numchunks__)
+#         self.chunk_ref_list = []
+#         self.chunk_size = int(chunk_size)
+#         for i in range(0, len(value), chunk_size):
+#             chunk = value[i:i + chunk_size]
+#             self.chunk_ref_list.append(ray.put(chunk))
+#         self.__length__ = len(value)
+#         self.__numchunks__ = len(self.chunk_ref_list)
+#         self.chunk_list = [None for _ in self.chunk_ref_list]
+#         print("Total chunks:", self.__numchunks__)
 
-    def __len__(self):
-        return self.__length__
+#     def __len__(self):
+#         return self.__length__
 
-    def __getitem__(self, idx):
-        # return optimized_getitem(self, idx, self.chunk_size, self.chunk_ref_list, self.chunk_list)
-        item = optimized_getitem(idx, self.chunk_size, self.chunk_ref_list, self.chunk_list)
-        # print(f"Fetched_chunk: {len(self.chunk_list[idx // self.chunk_size])}")
-        return item
+#     def __getitem__(self, idx):
+#         # return optimized_getitem(self, idx, self.chunk_size, self.chunk_ref_list, self.chunk_list)
+#         item = optimized_getitem(idx, self.chunk_size, self.chunk_ref_list, self.chunk_list)
+#         # print(f"Fetched_chunk: {len(self.chunk_list[idx // self.chunk_size])}")
+#         return item
         
 
 @ray.remote
 class Worker:
     def __init__(self):
         # print(parent_directory, flush=True)
-        # print(os.environ.get('PYTHONPATH', ''), flush=True)
+        print(os.environ.get('PYTHONPATH', ''), flush=True)
         pass
 
     def search(self, idx, node_ref, target_value, start_pos, range_pos, measure_threshold_ns=500):
+        from cythonroy import roylist
         node_ref = node_ref[0]
         start_time = time.time()
         self.node_list = ray.get(node_ref)
-        if isinstance(self.node_list, Roylist):
+        # if isinstance(self.node_list, Roylist):
             # C++ version
             # self.node_list = roylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
             # Rust version
             # self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
             # self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list), idx)  # with prefetching
             # Cython
-            self.node_list = cythonroylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
+            # self.node_list = cythonroy.roylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
         end_time = time.time()
         print(f"Time remote loading: {end_time - start_time} sec", flush=True)
 
@@ -166,20 +167,23 @@ def list_search(node_list, target_value, num_workers=num_workers):
     return (end_time - start_time) * 1e6    # in microseconds
     # return sum(results) / len(results)
 
-# def create_roy_list(value, chunk_size):
-#     chunk_ref_list = []
-#     chunk_size = int(chunk_size)
-#     for i in range(0, len(value), chunk_size):
-#         chunk = value[i:i + chunk_size]
-#         chunk_ref_list.append(ray.put(chunk))
-#     return roylist.Roylist(chunk_ref_list, chunk_size, len(value))
+def create_roy_list(value, chunk_size):
+    chunk_ref_list = []
+    chunk_size = int(chunk_size)
+    for i in range(0, len(value), chunk_size):
+        chunk = value[i:i + chunk_size]
+        chunk_ref_list.append(ray.put(chunk))
+    # return roylist.Roylist(chunk_ref_list, chunk_size, len(value))
+    return roylist.Roylist(chunk_ref_list, chunk_size, len(value))
 
 def list_search_roy(node_list, target_value, num_workers=num_workers):
     start_time = time.time()
     # Initialize the shared state actor
-    # roy_list = create_roy_list(node_list, 4 * 1024)
-    roy_list = Roylist(node_list, len(node_list) // num_workers)
-    print(f"Roylist: {len(roy_list)}")
+    roy_list = create_roy_list(node_list, len(node_list) // num_workers)
+    
+    # roy_list = Roylist(node_list, len(node_list) // num_workers)
+    # print(f"Roylist: {len(roy_list)}")
+
     node_list_ref = ray.put(roy_list)
     end_time = time.time()
     print(f"Time loading: {end_time - start_time} sec", flush=True)
@@ -232,4 +236,9 @@ on-demand [2344455.004] us
 partitioned [1397961.696] us
 non-part-ed [2701779.127] us
 on-demand [1770343.701] us
+
+# cython for 64-byte string
+partitioned [1988321.622] us
+non-part-ed [3257741.372] us
+on-demand [1984654.665] us
 '''
