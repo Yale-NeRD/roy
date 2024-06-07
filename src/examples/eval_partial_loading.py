@@ -82,9 +82,9 @@ class Worker:
         self.node_list = ray.get(node_ref)
         if isinstance(self.node_list, Roylist):
             # C++ version
-            self.node_list = roylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
+            # self.node_list = roylist.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
             # Rust version
-            # self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
+            self.node_list = roy_shmem.Roylist(self.node_list.chunk_ref_list, self.node_list.chunk_size, len(self.node_list))
         end_time = time.time()
         print(f"Time remote loading: {end_time - start_time} sec", flush=True)
 
@@ -177,8 +177,8 @@ if __name__ == "__main__":
     num_nodes = int(1e7)
     num_repeat = 3
     ray.init(runtime_env={"py_modules": [parent_directory + "/cpproy"]})
-    # ray.init(runtime_env={"working_dir": parent_directory + "/cpproy"})
-    node_list = ["12345678901234567890123456789012345678901234567890123456789012341234567890123456789012345678901234567890123456789012345678901234" for i in range(num_nodes)]
+    # node_list = ["12345678901234567890123456789012345678901234567890123456789012341234567890123456789012345678901234567890123456789012345678901234" for i in range(num_nodes)]
+    node_list = [float(i) for i in range(num_nodes)]
     list_search_time_partial = ([list_search_partial(node_list, num_nodes // 2) for _ in range(num_repeat)])
     list_search_time = ([list_search(node_list, num_nodes // 2) for _ in range(num_repeat)])
     list_search_time_roy = ([list_search_roy(node_list, num_nodes // 2) for _ in range(num_repeat)])
