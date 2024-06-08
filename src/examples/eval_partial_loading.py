@@ -79,7 +79,7 @@ num_workers = 4
 class Worker:
     def __init__(self):
         # print(parent_directory, flush=True)
-        print(os.environ.get('PYTHONPATH', ''), flush=True)
+        # print(os.environ.get('PYTHONPATH', ''), flush=True)
         pass
 
     def search(self, idx, node_ref, target_value, start_pos, range_pos, measure_threshold_ns=500):
@@ -101,6 +101,9 @@ class Worker:
         total_time = 0
         count = 0
 
+        if isinstance(self.node_list, roylist.Roylist):
+            self.node_list.__lock__()
+        # print(f"Start searching {idx}", flush=True)
         for i in range(start_pos, start_pos + range_pos):
             start_time = time.perf_counter_ns()
             node_id = self.node_list[i]
@@ -113,9 +116,12 @@ class Worker:
             if node_id == target_value:
                 # print(f"Found target node: {node_id}", flush=True)
                 break
+        # print(f"End searching {idx} :: {isinstance(self.node_list, roylist.Roylist)}", flush=True)
+        if isinstance(self.node_list, roylist.Roylist):
+            self.node_list.__unlock__()
 
-        if isinstance(self.node_list, roy_shmem.Roylist):
-            print(f"Access latency in rust: {self.node_list.get_access_latency()}", flush=True)
+        # if isinstance(self.node_list, roy_shmem.Roylist):
+        #     print(f"Access latency in rust: {self.node_list.get_access_latency()}", flush=True)
 
         average_time = total_time / count if count > 0 else 0
         return average_time
