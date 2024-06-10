@@ -9,71 +9,15 @@ script_dir = os.path.dirname(__file__)
 parent_directory = os.path.dirname(script_dir)
 sys.path.append(parent_directory)
 sys.path.append(parent_directory + '/cpproy')
-sys.path.append(parent_directory + '/cythonroy')
+sys.path.append(parent_directory + '/roytypes')
 import roy_shmem
 # from cpproy import roylist
-from cythonroy import roylist
+# from roytypes import RoySet
+from roytypes import RoyList
 
-num_nodes = int(1e7)
+num_nodes = int(1e6)
 num_repeat = 3
 num_workers = 4
-
-# class Roylist:
-#     def __init__(self, value=None, chunk_size=int(1e6)):
-#         assert value is not None, "Value cannot be None"
-#         assert isinstance(value, list), f"Only list is supported — given type: {type(value)}"
-#         assert chunk_size > 0, "Chunk size must be greater than 0"
-#         assert ray.is_initialized(), "Ray must be initialized"
-
-#         self.chunk_ref_list = []
-#         self.chunk_size = int(chunk_size)
-#         for i in range(0, len(value), chunk_size):
-#             chunk = value[i:i + chunk_size]
-#             self.chunk_ref_list.append(ray.put(chunk))
-#         self.__len__ = len(value)
-#         self.__numchunks__ = len(self.chunk_ref_list)
-#         self.chunk_list = [None for _ in self.chunk_ref_list]
-#         # self.chunk_list = [ray.get(chunk) for chunk in self.chunk_ref_list]
-#         print("Total chunks:", self.__numchunks__)
-
-#     def __getitem__(self, idx):
-#         if idx >= self.__len__:
-#             raise IndexError("Index out of range")
-#         chunk_idx = idx // self.chunk_size
-#         if self.chunk_list[chunk_idx] is None:
-#             self.chunk_list[chunk_idx] = ray.get(self.chunk_ref_list[chunk_idx])
-#             # print(f"Loaded chunk {chunk_idx}", flush=True)
-#         return self.chunk_list[chunk_idx][idx % self.chunk_size]
-#         # return self.chunk_list[idx // self.chunk_size][idx % self.chunk_size]
-#         # return self.chunk_list[idx]
-
-# from roy_shmem import optimized_getitem
-# class Roylist:
-#     def __init__(self, value=None, chunk_size=int(1e6)):
-#         assert value is not None, "Value cannot be None"
-#         assert isinstance(value, list), f"Only list is supported — given type: {type(value)}"
-#         assert chunk_size > 0, "Chunk size must be greater than 0"
-#         assert ray.is_initialized(), "Ray must be initialized"
-
-#         self.chunk_ref_list = []
-#         self.chunk_size = int(chunk_size)
-#         for i in range(0, len(value), chunk_size):
-#             chunk = value[i:i + chunk_size]
-#             self.chunk_ref_list.append(ray.put(chunk))
-#         self.__length__ = len(value)
-#         self.__numchunks__ = len(self.chunk_ref_list)
-#         self.chunk_list = [None for _ in self.chunk_ref_list]
-#         print("Total chunks:", self.__numchunks__)
-
-#     def __len__(self):
-#         return self.__length__
-
-#     def __getitem__(self, idx):
-#         # return optimized_getitem(self, idx, self.chunk_size, self.chunk_ref_list, self.chunk_list)
-#         item = optimized_getitem(idx, self.chunk_size, self.chunk_ref_list, self.chunk_list)
-#         # print(f"Fetched_chunk: {len(self.chunk_list[idx // self.chunk_size])}")
-#         return item
-        
 
 @ray.remote
 class Worker:
@@ -83,7 +27,7 @@ class Worker:
         pass
 
     def search(self, idx, node_ref, target_value, start_pos, range_pos, measure_threshold_ns=500):
-        from cythonroy import roylist
+        # from roytypes import roylist
         node_ref = node_ref[0]
         start_time = time.time()
         self.node_list = ray.get(node_ref)
@@ -101,7 +45,7 @@ class Worker:
         total_time = 0
         count = 0
 
-        if isinstance(self.node_list, roylist.Roylist):
+        if isinstance(self.node_list, RoyList):
             self.node_list.__lock__()
         # print(f"Start searching {idx}", flush=True)
         for i in range(start_pos, start_pos + range_pos):
@@ -117,7 +61,7 @@ class Worker:
                 # print(f"Found target node: {node_id}", flush=True)
                 break
         # print(f"End searching {idx} :: {isinstance(self.node_list, roylist.Roylist)}", flush=True)
-        if isinstance(self.node_list, roylist.Roylist):
+        if isinstance(self.node_list, RoyList):
             self.node_list.__unlock__()
 
         # if isinstance(self.node_list, roy_shmem.Roylist):
@@ -174,22 +118,18 @@ def list_search(node_list, target_value, num_workers=num_workers):
     # return sum(results) / len(results)
 
 def create_roy_list(value, chunk_size):
-    chunk_ref_list = []
-    chunk_size = int(chunk_size)
-    for i in range(0, len(value), chunk_size):
-        chunk = value[i:i + chunk_size]
-        chunk_ref_list.append(ray.put(chunk))
-    # return roylist.Roylist(chunk_ref_list, chunk_size, len(value))
-    return roylist.Roylist(chunk_ref_list, chunk_size, len(value))
+    # chunk_ref_list = []
+    # chunk_size = int(chunk_size)
+    # for i in range(0, len(value), chunk_size):
+    #     chunk = value[i:i + chunk_size]
+    #     chunk_ref_list.append(ray.put(chunk))
+    # return RoyList(chunk_ref_list, chunk_size, len(value))
+    return RoyList(value, chunk_size)
 
 def list_search_roy(node_list, target_value, num_workers=num_workers):
     start_time = time.time()
     # Initialize the shared state actor
     roy_list = create_roy_list(node_list, len(node_list) // num_workers)
-    
-    # roy_list = Roylist(node_list, len(node_list) // num_workers)
-    # print(f"Roylist: {len(roy_list)}")
-
     node_list_ref = ray.put(roy_list)
     end_time = time.time()
     print(f"Time loading: {end_time - start_time} sec", flush=True)
@@ -211,7 +151,7 @@ def list_search_roy(node_list, target_value, num_workers=num_workers):
 
 # Example usage
 if __name__ == "__main__":
-    ray.init(runtime_env={"py_modules": [parent_directory + "/cpproy", parent_directory + "/cythonroy"]})
+    ray.init(runtime_env={"py_modules": [parent_directory + "/cpproy", parent_directory + "/roytypes"]})
     node_list = ["12345678901234567890123456789012345678901234567890123456789012341234567890123456789012345678901234567890123456789012345678901234" for i in range(num_nodes)]
     # node_list = [float(i) for i in range(num_nodes)]
     list_search_time_partial = ([list_search_partial(node_list, num_nodes // 2) for _ in range(num_repeat)])

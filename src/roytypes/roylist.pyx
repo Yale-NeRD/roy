@@ -5,9 +5,9 @@ from libc.stdlib cimport malloc, free
 from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
-from cythonroy.roylock import RoyLock
+from roytypes.roylock import RoyLock
 
-cdef class Roylist:
+cdef class RoyList:
     # data structure essentials
     cdef list chunk_ref_list # list of ray reference to each chunk
     cdef int chunk_size # size of each chunk, in # of elements
@@ -22,19 +22,27 @@ cdef class Roylist:
     cdef int access_count
 
 
-    def __cinit__(self, list chunk_ref_list, int chunk_size, int length, object lock=None, int prefetch_idx=-1, int per_chunk_lock=0):
-        if chunk_ref_list is None:
+    def __cinit__(self, list value, int chunk_size, object lock=None, int prefetch_idx=-1, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1):
+        '''
+        @lock: lock object for synchronization. For deserialization, it should be given.
+        @chunk_ref_list: list of ray reference to each chunk for deserializing
+        '''
+        if value is None and chunk_ref_list is None:
             raise ValueError("Value cannot be None")
         if chunk_size <= 0:
             raise ValueError("Chunk size must be greater than 0")
-        
         if not ray.is_initialized():
             raise AssertionError("Ray must be initialized")
-        
-        self.chunk_ref_list = chunk_ref_list
+
+        if chunk_ref_list is not None:
+            assert length != -1
+            self.chunk_ref_list = chunk_ref_list
+            self.length = length
+        else:
+            self.chunk_ref_list = [ray.put(value[i:i + chunk_size]) for i in range(0, len(value), chunk_size)]
+            self.length = len(value)
         self.chunk_size = chunk_size
-        self.length = length
-        self.chunk_list = [[] for _ in range(len(chunk_ref_list))]
+        self.chunk_list = [[] for _ in range(len(self.chunk_ref_list))]
         if lock is None:
             self._lock = RoyLock.remote()
         else:
@@ -65,8 +73,12 @@ cdef class Roylist:
         chunk = ray.get(self.chunk_ref_list[chunk_idx])
         self.chunk_list[chunk_idx] = chunk
 
+    @staticmethod
+    def rebuild(chunk_ref_list, chunk_size, length, lock, prefetch_idx, per_chunk_lock):
+        return RoyList(None, chunk_size, lock, prefetch_idx, per_chunk_lock, chunk_ref_list, length)
+
     def __reduce__(self):
-        return (self.__class__, (self.chunk_ref_list, self.chunk_size, self.length, self._lock, -1, self.per_chunk_lock))
+        return (self.rebuild, (self.chunk_ref_list, self.chunk_size, self.length, self._lock, -1, self.per_chunk_lock))
 
     def __lock__(self):
         if self._lock is not None:
