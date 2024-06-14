@@ -15,7 +15,7 @@ build_all: build_py build_ctrl
 # 	@cd src/roy_ctrl && python setup.py sdist bdist_wheel && pip install .
 
 build_pyx:
-	@cd src/cythonroy && make
+	@cd src/roytypes && make
 
 build_py:
 	@cd src/roy_shmem && maturin develop --release
