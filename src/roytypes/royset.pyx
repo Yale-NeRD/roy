@@ -6,7 +6,7 @@ from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
 from roytypes.roylock import RoyLock
-from .royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
+from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
 import time
 import asyncio
 from threading import Thread, Lock
