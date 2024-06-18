@@ -7,7 +7,7 @@ test: build_py pydep
 
 pydep:
 	@pip install -r src/pyroy/requirements.txt
-	# @pip install -r src/roy_ctrl/requirements.txt
+# @pip install -r src/roy_ctrl/requirements.txt
 
 build_all: build_py build_ctrl
 
@@ -27,6 +27,7 @@ build_ctrl:
 # clean rust and pycache
 clean:
 	@cd src/roy_shmem && cargo clean
+	@cd src/roytypes && make clean
 	@find . -type d -name __pycache__ -exec rm -r {} \+
 	@pip uninstall roy_ctrl
 
