@@ -129,8 +129,11 @@ class RoyCacheLocalMSI(RoyCache):
 class RoyProxy:
     def __init__(self, data, cache_class=RoyCacheDirMSI):
         self._data = data
-        assert issubclass(cache_class, RoyCache), "cache_class must be a subclass of RoyCache"
-        self._cache = cache_class()
+        if cache_class:
+            assert issubclass(cache_class, RoyCache), "cache_class must be a subclass of RoyCache"
+            self._cache = cache_class()
+        else:
+            self._cache = None  # cache disabled
 
     def get_nocache(self):
         return self._data

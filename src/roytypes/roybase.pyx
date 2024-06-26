@@ -89,6 +89,7 @@ cdef class RoyBase:
     cdef void _fetch_chunk_(self, int chunk_idx):
         proxy_ref = self.chunk_ref_list[chunk_idx].ref
         self.chunk_list[chunk_idx] = ray.get(proxy_ref.get.remote(gen_roy_id()))
+        # print(f"Fetched chunk {chunk_idx}", flush=True)
         
         thread = Thread(target=self._invalidate_cache, args=(proxy_ref, chunk_idx))
         thread.start()
@@ -100,6 +101,7 @@ cdef class RoyBase:
             proxy_ref = self.chunk_ref_list[chunk_idx].ref
             data = self.chunk_list[chunk_idx]
             self.chunk_list[chunk_idx] = None
+            # print(f"Evicting chunk {chunk_idx}", flush=True)
             ray.get(proxy_ref.set.remote(gen_roy_id(), data))
 
     def __lock__(self):
@@ -111,11 +113,19 @@ cdef class RoyBase:
             # remove all chunk_list
             for chunk_idx, _ in enumerate(self.chunk_list):
                 if self.chunk_list[chunk_idx] is not None:
+                    # print(f"Evicting chunk {chunk_idx}", flush=True)
                     self._evict_chunk_(chunk_idx)
-                    print(f"Evicting chunk {chunk_idx}", flush=True)
+                    # print(f"Evicted chunk {chunk_idx}", flush=True)
 
         if self._lock is not None:
             ray.get(self._lock.unlock.remote())
+
+    def flush(self):
+        for chunk_idx, _ in enumerate(self.chunk_list):
+            if self.chunk_list[chunk_idx] is not None:
+                # print(f"FLUSH: Evicting chunk {chunk_idx}", flush=True)
+                self._evict_chunk_(chunk_idx)
+                # print(f"FLUSH: Evicted chunk {chunk_idx}", flush=True)
 
     def __enter__(self):
         self.__lock__()

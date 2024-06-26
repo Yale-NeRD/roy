@@ -9,7 +9,7 @@ sys.path.append(parent_directory)
 sys.path.append(parent_directory + '/cpproy')
 sys.path.append(parent_directory + '/roytypes')
 
-from roytypes import RoySet, remote, remote_worker
+from roytypes import RoySet, RoyList, remote, remote_worker
 
 import ray  # `pip install ray` for this example
 from graph_bfs_base import run_bfs
@@ -20,7 +20,7 @@ class SharedState:
     def __init__(self):
         self.visited = RoySet()
         self.queue = Queue()
-        self.found = RoySet()
+        self.found = RoyList()
 
 # See the similarity with the single-threaded program
 @remote_worker
@@ -48,27 +48,29 @@ class Worker:
                     shared_state.queue.put(node_id)
             # Note) there is only one data transfer after the lock is released,
             #       unlike Ray who calls RPC multiple times
-            # DEBUG:
-            print(f"Visited: {shared_state.visited}", flush=True)
 
     def search(self, idx, target_value):
-        print(f"Worker {idx} | started - {str(ray.get_runtime_context().get_worker_id())}", flush=True)
+        # print(f"Worker {idx} | started - {str(ray.get_runtime_context().get_worker_id())}", flush=True)
         while True:
             node_id = self.get_next_node()
             if node_id is None:
                 with self.shared_state as shared_state:
                     if True in shared_state.found:
+                        # self.shared_state.roy_flush()
                         return None # target found by another worker
                 # retry after sleep
                 import time
                 time.sleep(1)
+                print(f"Worker {idx} | retry", flush=True)
                 continue
 
             print(f"Worker {idx} | next node: {node_id}", flush=True)
             if node_id == target_value:
                 with self.shared_state as shared_state:
-                    shared_state.found.add(True)
+                    shared_state.found.append(True)
                 print(f"Found target node {idx}: {node_id}", flush=True)
+                # self.shared_state.roy_flush()
+                # print(f"Flushed {idx}", flush=True)
                 return node_id
 
             self.update_nodes(node_id)

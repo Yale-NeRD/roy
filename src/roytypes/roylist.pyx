@@ -2,121 +2,181 @@ from cpython.pycapsule cimport PyCapsule_New
 from cpython.exc cimport PyErr_NewException
 from cpython.list cimport PyList_GetItem, PyList_Size
 from libc.stdlib cimport malloc, free
-from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
 from roytypes.roylock import RoyLock
+from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
+from roytypes.roybase cimport RoyBase, RoyChunk
 
-cdef class RoyList:
-    # data structure essentials
-    cdef list chunk_ref_list # list of ray reference to each chunk
-    cdef int chunk_size # size of each chunk, in # of elements
-    cdef list chunk_list    # fetched chunk via ray.get or remote
-    cdef int length # total length, not in chunks
-    # locking support
-    cdef object _lock
-    # configs
-    cdef int per_chunk_lock
-    # stats
-    cdef double access_latency
-    cdef int access_count
+cdef class ListChunkMeta:
+    cdef object last_used_chunk # Ray ref to the index of the last chunk in use
+    cdef int max_element_per_chunk
+    cdef object chunk_used # Ray ref to the list of element counts for each chunk
 
+    def __init__(self, object last_used_chunk=None, int max_element_per_chunk=1024, object chunk_used=None):
+        self.last_used_chunk = last_used_chunk
+        self.max_element_per_chunk = max_element_per_chunk
+        self.chunk_used = chunk_used
 
-    def __cinit__(self, list value, int chunk_size, object lock=None, int prefetch_idx=-1, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1):
+cdef class RoyList(RoyBase):
+    cdef ListChunkMeta _meta
+
+    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1, ListChunkMeta meta=ListChunkMeta()):
+        # TODO: length must be calculated from _meta.chunk_used or synchronized over RoyProxy
         '''
         @lock: lock object for synchronization. For deserialization, it should be given.
         @chunk_ref_list: list of ray reference to each chunk for deserializing
         '''
-        if value is None and chunk_ref_list is None:
-            raise ValueError("Value cannot be None")
-        if chunk_size <= 0:
-            raise ValueError("Chunk size must be greater than 0")
-        if not ray.is_initialized():
-            raise AssertionError("Ray must be initialized")
+        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, length)
+        # if value is not None:
+        #     self._init_new_chunk_list_(num_chunks, value)
+        self._meta = meta
+        if chunk_ref_list is None:
+            # create the used chunk list based on the initial value (can be even 0 elements)
+            # we create RoyProxy with caching disabled
+            self._meta.chunk_used = RoyProxy.remote([len(chunk) if chunk else 0 for chunk in self.chunk_list], None)
+            self._meta.last_used_chunk = RoyProxy.remote(0, None)
 
-        if chunk_ref_list is not None:
-            assert length != -1
-            self.chunk_ref_list = chunk_ref_list
-            self.length = length
+    cdef void _init_new_chunk_list_(self, int num_chunks=32, list value=None):
+        '''
+        Called in super().__init__ to initialize the chunk list
+        '''
+        if value is None:
+            chunked_lists = [[] for _ in range(num_chunks)]
         else:
-            self.chunk_ref_list = [ray.put(value[i:i + chunk_size]) for i in range(0, len(value), chunk_size)]
-            self.length = len(value)
-        self.chunk_size = chunk_size
-        self.chunk_list = [[] for _ in range(len(self.chunk_ref_list))]
-        if lock is None:
-            self._lock = RoyLock.remote()
-        else:
-            self._lock = lock
-        self.per_chunk_lock = per_chunk_lock
-        self.access_latency = 0.0
-        self.access_count = 0
+            chunk_size = (len(value) + num_chunks - 1) // num_chunks  # calculate the size of each chunk
+            chunked_lists = [value[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
+        self.chunk_ref_list = [RoyChunk(RoyProxy.remote(chunk, RoyCacheDirMSI), RoyCacheLocalMSI()) for chunk in chunked_lists]
+        self.length = len(value) if value else 0
 
-        # Preload
-        if prefetch_idx != -1:
-            if not self.chunk_list[prefetch_idx]:
-                chunk = ray.get(self.chunk_ref_list[prefetch_idx])
-                self.chunk_list[prefetch_idx] = chunk
+    def __getitem__(self, int index):
+        if index < 0 or index >= self.length:
+            raise IndexError("list index out of range")
+        chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
+        cdef int chunk_idx = 0
+        cdef int intra_chunk_idx = 0
+        for i in range(self.num_chunks):
+            ray.get(chunk_used[i])
+            if index < chunk_used[i]:
+                chunk_idx = i
+                break
+            index -= chunk_used[i]
+        if self.chunk_list[chunk_idx] is None:
+            self._fetch_chunk_(chunk_idx)
+        return self.chunk_list[chunk_idx][index]
 
-    def __getitem__(self, int idx):
-        if idx >= self.length:
-            raise IndexError("Index out of range")
+    def __setitem__(self, int index, object value):
+        if index < 0 or index >= self.length:
+            raise IndexError("list index out of range")
+        cdef list chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
+        cdef int chunk_idx = 0
+        cdef int intra_chunk_idx = 0
+        for i in range(self.num_chunks):
+            if index < chunk_used[i]:
+                chunk_idx = i
+                break
+            index -= chunk_used[i]
+        if chunk_idx >= self.num_chunks:
+            raise IndexError("list index out of range")
+        if self.chunk_list[chunk_idx] is None:
+            self._fetch_chunk_(chunk_idx)
+        self.chunk_list[chunk_idx][index] = value
 
-        cdef int chunk_idx = idx // self.chunk_size
-        cdef int chunk_offset = idx % self.chunk_size
+    def append(self, object item):
+        cdef int chunk_idx = ray.get(self._meta.last_used_chunk.get_nocache.remote())
+        cdef list chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
 
-        if not self.chunk_list[chunk_idx]:
+        while chunk_idx < self.num_chunks and chunk_used[chunk_idx] >= self._meta.max_element_per_chunk:
+            chunk_idx += 1
+        if chunk_idx >= self.num_chunks:
+            raise OverflowError("Exceeded maximum number of chunks")
+        if self.chunk_list[chunk_idx] is None:
             self._fetch_chunk_(chunk_idx)
 
-        return self.chunk_list[chunk_idx][chunk_offset]
+        self.chunk_list[chunk_idx].append(item)
+        chunk_used[chunk_idx] += 1
+        ray.get(self._meta.chunk_used.set_nocache.remote(chunk_used))
+        ray.get(self._meta.last_used_chunk.set_nocache.remote(chunk_idx))
+        self.length += 1
 
-    cdef void _fetch_chunk_(self, int chunk_idx):
-        chunk = ray.get(self.chunk_ref_list[chunk_idx])
-        self.chunk_list[chunk_idx] = chunk
+    def extend(self, object items):
+        for item in items:
+            self.append(item)
 
-    @staticmethod
-    def rebuild(chunk_ref_list, chunk_size, length, lock, prefetch_idx, per_chunk_lock):
-        return RoyList(None, chunk_size, lock, prefetch_idx, per_chunk_lock, chunk_ref_list, length)
+    def insert(self, int index, object item):
+        if index < 0:
+            index = self.length + index
+        if index > self.length:
+            raise IndexError("list index out of range")
+
+        self.append(None)  # Increase length by 1 to make space
+
+        for i in range(self.length-1, index, -1):
+            self[i] = self[i-1]
+
+        self[index] = item
+
+    def remove(self, object item):
+        index = self.index(item)
+        self.pop(index)
+
+    def pop(self, int index=-1):
+        if index < 0:
+            index = self.length + index
+        if index >= self.length or index < 0:
+            raise IndexError("pop index out of range")
+
+        item = self[index]
+        for i in range(index, self.length-1):
+            self[i] = self[i+1]
+
+        self.length -= 1
+        return item
+
+    def clear(self):
+        # TODO: flush any items in the cache
+        self.chunk_list = [None] * self.num_chunks
+        self.chunk_ref_list = [None] * self.num_chunks
+        self.length = 0
+        self._meta.last_used_chunk = 0
+
+    def index(self, object item, int start=0, int end=-1):
+        # TODO: compute end based on updated length
+        # if end == -1:
+        #     end = self.length
+
+        cdef int chunk_idx = ray.get(self._meta.last_used_chunk.get_nocache.remote())
+        cdef list chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
+        cdef int item_idx = 0
+        for i in range(start, chunk_idx+1):
+            if self.chunk_list[i] is None:
+                self._fetch_chunk_(i)
+            if item in self.chunk_list[i]:
+                return item_idx + self.chunk_list[i].index(item)
+            item_idx += chunk_used[i]
+        raise ValueError(f"{item} is not in list")
+
+    def __len__(self):
+        return self.length
+
+    def __contains__(self, object item):
+        try:
+            self.index(item)
+            return True
+        except ValueError:
+            return False
+
+    def __iter__(self):
+        for i in range(self.length):
+            yield self[i]
 
     def __reduce__(self):
-        return (self.rebuild, (self.chunk_ref_list, self.chunk_size, self.length, self._lock, -1, self.per_chunk_lock))
+        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self.length, self._lock, self.per_chunk_lock, self._meta))
 
-    def __lock__(self):
-        if self._lock is not None:
-            ray.get(self._lock.lock.remote())
+    @staticmethod
+    def rebuild(chunk_ref_list, num_chunks, length, lock, per_chunk_lock, meta):
+        return RoyList(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, length, meta)
 
-    def __unlock__(self):
-        if self._lock is not None:
-            ray.get(self._lock.unlock.remote())
-
-    def __enter__(self):
-        self.__lock__()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.__unlock__()
-
-    '''
-    @classmethod
-    def reconstruct(cls, chunk_ref_list, chunk_size, length, idx):
-        obj = cls.__new__(cls)  # create a new instance without calling __init__
-        obj.chunk_ref_list = chunk_ref_list
-        obj.chunk_size = chunk_size
-        obj.length = length
-        obj.num_chunks = len(chunk_ref_list)
-        obj.chunk_list = [[] for _ in range(obj.num_chunks)]
-        obj.access_latency = 0.0
-        obj.access_count = 0
-
-        # Preload
-        if idx != -1:
-            if not obj.chunk_list[idx]:
-                chunk = ray.get(obj.chunk_ref_list[idx])
-                obj.chunk_list[idx] = chunk
-
-        return obj
-
-    def get_access_latency(self):
-        if self.access_count == 0:
-            return 0.0
-        return self.access_latency / self.access_count
-    '''
+    def __repr__(self):
+        return f"RoyList({self.chunk_list})"
+    
