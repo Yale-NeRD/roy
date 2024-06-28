@@ -2,7 +2,10 @@
 
 build: build_pyx build_py pydep
 
-test: build_py pydep
+test: build
+	@python -m pytest -v src/tests/roy_list_single.py
+
+test_py: build_py pydep
 	@cd src/pyroy && python -m pytest -v
 
 pydep:

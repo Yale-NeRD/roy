@@ -34,7 +34,9 @@ cdef class RoyList(RoyBase):
         if chunk_ref_list is None:
             # create the used chunk list based on the initial value (can be even 0 elements)
             # we create RoyProxy with caching disabled
-            self._meta.chunk_used = RoyProxy.remote([len(chunk) if chunk else 0 for chunk in self.chunk_list], None)
+            self._meta.chunk_used = RoyProxy.remote(
+                [len(chunk) if chunk else 0 for chunk in self.chunk_list],
+                cache_class=None)
             self._meta.last_used_chunk = RoyProxy.remote(0, None)
 
     cdef void _init_new_chunk_list_(self, int num_chunks=32, list value=None):
@@ -48,15 +50,13 @@ cdef class RoyList(RoyBase):
             chunked_lists = [value[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
         self.chunk_ref_list = [RoyChunk(RoyProxy.remote(chunk, RoyCacheDirMSI), RoyCacheLocalMSI()) for chunk in chunked_lists]
         self.length = len(value) if value else 0
+        print(f"Initial chunked list: {chunked_lists}")
 
     def __getitem__(self, int index):
-        if index < 0 or index >= self.length:
-            raise IndexError("list index out of range")
-        chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
+        cdef list chunk_used = self._fetch_chunk_usage_and_length(index)
         cdef int chunk_idx = 0
         cdef int intra_chunk_idx = 0
         for i in range(self.num_chunks):
-            ray.get(chunk_used[i])
             if index < chunk_used[i]:
                 chunk_idx = i
                 break
@@ -66,9 +66,7 @@ cdef class RoyList(RoyBase):
         return self.chunk_list[chunk_idx][index]
 
     def __setitem__(self, int index, object value):
-        if index < 0 or index >= self.length:
-            raise IndexError("list index out of range")
-        cdef list chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
+        cdef list chunk_used = self._fetch_chunk_usage_and_length(index)
         cdef int chunk_idx = 0
         cdef int intra_chunk_idx = 0
         for i in range(self.num_chunks):
@@ -81,6 +79,16 @@ cdef class RoyList(RoyBase):
         if self.chunk_list[chunk_idx] is None:
             self._fetch_chunk_(chunk_idx)
         self.chunk_list[chunk_idx][index] = value
+
+    def __len__(self):
+        return sum(ray.get(self._meta.chunk_used.get_nocache.remote()))
+
+    def _fetch_chunk_usage_and_length(self, int index) -> list:
+        cdef list chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
+        self.length  = sum(chunk_used)
+        if index >= 0 and index >= self.length:
+            raise IndexError("list index out of range")
+        return chunk_used
 
     def append(self, object item):
         cdef int chunk_idx = ray.get(self._meta.last_used_chunk.get_nocache.remote())
@@ -104,47 +112,99 @@ cdef class RoyList(RoyBase):
             self.append(item)
 
     def insert(self, int index, object item):
+        cdef list chunk_used = self._fetch_chunk_usage_and_length(index)
+        cdef int chunk_last_used = ray.get(self._meta.last_used_chunk.get_nocache.remote())
+        cdef int chunk_idx = -1
+        cdef int chunk_item_idx = 0
         if index < 0:
             index = self.length + index
         if index > self.length:
             raise IndexError("list index out of range")
 
-        self.append(None)  # Increase length by 1 to make space
+        # find chunk and item index
+        for i in range(chunk_last_used):
+            if index < chunk_item_idx:
+                chunk_idx = i
+                index = index - chunk_item_idx
+                break
+            chunk_item_idx += chunk_used[i]
 
-        for i in range(self.length-1, index, -1):
-            self[i] = self[i-1]
+        if chunk_idx < 0:
+            raise IndexError("list index out of range")
+        if self.chunk_list[chunk_idx] is None:
+            self._fetch_chunk_(chunk_idx)
+        self.chunk_list[chunk_idx].insert(index, item)
 
-        self[index] = item
+        # Update meta data
+        ray.get(self._meta.chunk_used.set_nocache.remote(chunk_used))
 
     def remove(self, object item):
         index = self.index(item)
         self.pop(index)
 
     def pop(self, int index=-1):
+        cdef int chunk_idx = -1
+        cdef list chunk_used = self._fetch_chunk_usage_and_length(index)
+        cdef int chunk_last_used = ray.get(self._meta.last_used_chunk.get_nocache.remote())
+        cdef int chunk_item_idx = self.length
+        cdef object found = None
+        cdef int item_idx = 0
+
         if index < 0:
             index = self.length + index
-        if index >= self.length or index < 0:
-            raise IndexError("pop index out of range")
 
-        item = self[index]
-        for i in range(index, self.length-1):
-            self[i] = self[i+1]
+        # find target chunk list (from backward, assuming most pop happens at the end)
+        assert chunk_last_used >= 0 and chunk_last_used < self.num_chunks,\
+            f"chunk_last_used [{chunk_last_used}] is out of range"
+        # TODO: make this search as a function
+        for i in range(chunk_last_used, -1, -1):
+            chunk_item_idx -= chunk_used[i]
+            if index >= chunk_item_idx:
+                chunk_idx = i   # found the chunk
+                item_idx = index - chunk_item_idx # index within the chunk
+                break
+        if chunk_idx < 0:
+            raise IndexError(f"list index out of range :: {index} / last_used_chunk={chunk_last_used} / chunk_used={chunk_used}")
+        # Get the item
+        if self.chunk_list[chunk_idx] is None:
+            self._fetch_chunk_(chunk_idx)
+        found = self.chunk_list[chunk_idx].pop(item_idx)
+        # TODO: lazy resizing
+        # Shift items after this chunk
+        for i in range(chunk_idx+1, chunk_last_used+1):
+            if self.chunk_list[i] is None:
+                self._fetch_chunk_(i)
+            assert len(self.chunk_list[i]) > 0,\
+                f"Chunk {i} is empty, but in the middle (chunk_last_used={chunk_last_used})"
+            self.chunk_list[i-1].append(self.chunk_list[i].pop(0))
+        # Update the chunk_used for the last_used_chunk
+        chunk_used[chunk_last_used] -= 1
+        assert chunk_used[chunk_last_used] == len(self.chunk_list[chunk_last_used]),\
+            f"chunk_used[{chunk_last_used}] != the chunk length[{len(self.chunk_list[chunk_last_used])}]"
+        ray.get(self._meta.chunk_used.set_nocache.remote(chunk_used))
+        if chunk_used[chunk_last_used] == 0:
+            ray.get(self._meta.last_used_chunk.set_nocache.remote(chunk_last_used-1))
 
         self.length -= 1
-        return item
+        return found
 
     def clear(self):
-        # TODO: flush any items in the cache
-        self.chunk_list = [None] * self.num_chunks
-        self.chunk_ref_list = [None] * self.num_chunks
+        # Fush any items in the cache
+        for idx, chunk in enumerate(self.chunk_list):
+            # Fetch any existing chunk
+            if chunk is None:
+                self._fetch_chunk_(idx)
+                chunk = self.chunk_list[idx]
+            # Clear the chunk and write back
+            chunk.clear()
+            self._evict_chunk_(idx)
+        # Reset the meta data
         self.length = 0
-        self._meta.last_used_chunk = 0
+        ray.get(self._meta.last_used_chunk.set_nocache.remote(0))
+        chunk_used = [0 for _ in range(self.num_chunks)]
+        ray.get(self._meta.chunk_used.set_nocache.remote(chunk_used))
 
     def index(self, object item, int start=0, int end=-1):
-        # TODO: compute end based on updated length
-        # if end == -1:
-        #     end = self.length
-
         cdef int chunk_idx = ray.get(self._meta.last_used_chunk.get_nocache.remote())
         cdef list chunk_used = ray.get(self._meta.chunk_used.get_nocache.remote())
         cdef int item_idx = 0
@@ -154,10 +214,9 @@ cdef class RoyList(RoyBase):
             if item in self.chunk_list[i]:
                 return item_idx + self.chunk_list[i].index(item)
             item_idx += chunk_used[i]
+            if end != -1 and item_idx >= end:
+                break
         raise ValueError(f"{item} is not in list")
-
-    def __len__(self):
-        return self.length
 
     def __contains__(self, object item):
         try:
@@ -179,4 +238,3 @@ cdef class RoyList(RoyBase):
 
     def __repr__(self):
         return f"RoyList({self.chunk_list})"
-    

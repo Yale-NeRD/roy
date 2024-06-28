@@ -104,7 +104,10 @@ class RoyCacheDirMSI(RoyCache):
         return True
 
     async def install_invalidate_handle(self, requester):
-        assert requester in self._cache_sharer.keys(), "Requester must be in the cache sharer list"
+        if requester not in self._cache_sharer.keys():
+            return  # requester might already invalidate the data
+        # assert requester in self._cache_sharer.keys(), f"Requester must be in the cache sharer list: {requester} not in {self._cache_sharer.keys()}"
+
         # create asyncio event to trigger the invalidation
         async_handle = asyncio.Event()
         self._cache_sharer[requester] = async_handle

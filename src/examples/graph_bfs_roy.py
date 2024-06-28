@@ -57,6 +57,7 @@ class Worker:
                 with self.shared_state as shared_state:
                     if True in shared_state.found:
                         # self.shared_state.roy_flush()
+                        print(f"Worker {idx} | target found by another worker", flush=True)
                         return None # target found by another worker
                 # retry after sleep
                 import time
