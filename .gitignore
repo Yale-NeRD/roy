@@ -1,4 +1,5 @@
 *.code-workspace
+.vscode
 
 # python related
 *.pyc

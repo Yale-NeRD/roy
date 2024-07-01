@@ -1,9 +1,9 @@
 .PHONY: help build develop test clean
 
-build: build_pyx build_py pydep
+build: build_pyx pydep
 
 test: build
-	@python -m pytest -v src/tests/roy_list_single.py
+	@python -m pytest -v src/tests/*.py
 
 test_py: build_py pydep
 	@cd src/pyroy && python -m pytest -v

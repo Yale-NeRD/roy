@@ -22,8 +22,6 @@ def ray_init_shutdown():
 
 @pytest.fixture
 def roylist():
-    # wait for the previous test to finish
-    time.sleep(1)
     return RoyList()
     # TODO: Support for the multiple instances
 
@@ -55,3 +53,4 @@ def test_clear(roylist):
     roylist.append(2)
     roylist.clear()
     assert len(roylist) == 0
+    roylist.flush()

@@ -23,8 +23,11 @@ cdef class RoyBase:
     cdef object _eviction_lock
     cdef int length
     cdef int per_chunk_lock
+    cdef object _roy_in_use
+    cdef list _roy_inval_threads
 
     cdef void _init_new_chunk_list_(self, int num_chunks=*, list value=*)
-    cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx)
+    cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx, int timeout)
     cdef void _fetch_chunk_(self, int chunk_idx)
     cdef void _evict_chunk_(self, int chunk_idx)
+    # cdef void _flush_chunks_(self)

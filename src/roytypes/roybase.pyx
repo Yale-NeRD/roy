@@ -8,7 +8,8 @@ import ray
 from roytypes.roylock import RoyLock
 from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
 import time
-import asyncio
+from asyncio import Event
+import threading
 from threading import Thread, Lock
 
 cdef class RoyChunk:
@@ -71,28 +72,56 @@ cdef class RoyBase:
             self._lock = lock
         self._eviction_lock = Lock()
         self.per_chunk_lock = per_chunk_lock
+        self._roy_in_use = Event()
+        self._roy_in_use.clear()  # Initially, not in use
+        self._roy_inval_threads = [None for _ in range(len(self.chunk_ref_list))]
 
     cdef void _init_new_chunk_list_(self, int num_chunks=32, list value=None):
         raise NotImplementedError("This method should be implemented in the subclass")
 
     # Define a function to invalidate the cache
-    cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx):
+    cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx, int timeout):
         print(f"Waiting for invalidation signal for chunk {chunk_idx}", flush=True)
-        # wait for the signal that the cache needs to be invalidated
-        ray.get(proxy_ref.install_invalidate_handle.remote(gen_roy_id()))
-        # invalidate the cache if it haven't
-        # - it might be already invalidated by _evict_chunk_
-        if self.chunk_list[chunk_idx] is not None:
-            print(f"Invalidating cache for chunk {chunk_idx}", flush=True)
-            self._evict_chunk_(chunk_idx)
+        while True:
+            try:
+                # wait for the signal that the cache needs to be invalidated
+                ray.get(proxy_ref.install_invalidate_handle.remote(gen_roy_id()), timeout=timeout)
+                # if is_inval_required:
+                # invalidate the cache if it haven't
+                # - it might be already invalidated by _evict_chunk_
+                if self.chunk_list[chunk_idx] is not None:
+                    # print(f"Invalidating cache for chunk {chunk_idx}", flush=True)
+                    self._evict_chunk_(chunk_idx)
+                return
+            except ray.exceptions.GetTimeoutError:
+                print(f"Timeout for invalidation signal for chunk {chunk_idx}... will retry", flush=True)
+                # we do not know if it was the actor has been terminated
+                # or we are simply need to wait longer
+                # so, we will retry and see which error is returned
+            except ray.exceptions.RayActorError as e:
+                # Now the actor is likely terminated
+                return
+            except ray.exceptions.RayTaskError as e:
+                # Now the actor is likely terminated
+                return
+            except Exception as e:
+                # TODO: find a new actor for fault tolerance
+                print(f"Exception for invalidation signal for chunk {chunk_idx}: {e}", flush=True)
+                return
 
     cdef void _fetch_chunk_(self, int chunk_idx):
+        timeout = 3
+        if self._roy_inval_threads[chunk_idx] is not None:
+            self._roy_inval_threads[chunk_idx].join()
+
         proxy_ref = self.chunk_ref_list[chunk_idx].ref
+        # TODO: fault tolerance for actor termination
         self.chunk_list[chunk_idx] = ray.get(proxy_ref.get.remote(gen_roy_id()))
         # print(f"Fetched chunk {chunk_idx}", flush=True)
         
-        thread = Thread(target=self._invalidate_cache, args=(proxy_ref, chunk_idx))
+        thread = Thread(target=self._invalidate_cache, args=(proxy_ref, chunk_idx, timeout))
         thread.start()
+        self._roy_inval_threads[chunk_idx] = thread
 
     cdef void _evict_chunk_(self, int chunk_idx):
         with self._eviction_lock:
@@ -101,24 +130,33 @@ cdef class RoyBase:
             proxy_ref = self.chunk_ref_list[chunk_idx].ref
             data = self.chunk_list[chunk_idx]
             self.chunk_list[chunk_idx] = None
-            # print(f"Evicting chunk {chunk_idx}", flush=True)
-            ray.get(proxy_ref.set.remote(gen_roy_id(), data))
+            try:
+                # print(f"Evicting chunk {chunk_idx}", flush=True)
+                ray.get(proxy_ref.set.remote(gen_roy_id(), data))
+            except Exception as e:
+                #print exception type
+                print(f"Exception for evicting chunk {chunk_idx}: {e.__class__.__name__} :: {e}", flush=True)
 
     def __lock__(self):
         if self._lock is not None:
             ray.get(self._lock.lock.remote())
+        self._roy_in_use.set()
+
+    def _flush_chunks_(self):
+        # remove all chunk_list
+        for chunk_idx, _ in enumerate(self.chunk_list):
+            if self.chunk_list[chunk_idx] is not None:
+                # print(f"Evicting chunk {chunk_idx}", flush=True)
+                self._evict_chunk_(chunk_idx)
+                # print(f"Evicted chunk {chunk_idx}", flush=True)
 
     def __unlock__(self, cache=True):
         if not cache:
-            # remove all chunk_list
-            for chunk_idx, _ in enumerate(self.chunk_list):
-                if self.chunk_list[chunk_idx] is not None:
-                    # print(f"Evicting chunk {chunk_idx}", flush=True)
-                    self._evict_chunk_(chunk_idx)
-                    # print(f"Evicted chunk {chunk_idx}", flush=True)
+            self._flush_chunks_()
 
         if self._lock is not None:
             ray.get(self._lock.unlock.remote())
+        self._roy_in_use.clear()
 
     def flush(self):
         for chunk_idx, _ in enumerate(self.chunk_list):
@@ -133,3 +171,10 @@ cdef class RoyBase:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.__unlock__()
+
+    def __del__(self):
+        self._flush_chunks_()
+        # join all threads
+        for thread in self._roy_inval_threads:
+            if thread is not None and thread != threading.current_thread():
+                thread.join()

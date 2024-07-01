@@ -103,7 +103,11 @@ class RoyCacheDirMSI(RoyCache):
         print(f"Requester {requester[:16]} | Perm: {permission} | Cache state: {self._cache_state} | Sharers: {self._cache_sharer}", flush=True)
         return True
 
-    async def install_invalidate_handle(self, requester):
+    async def install_invalidate_handle(self, requester, timeout):
+        '''
+        @return: bool - True if the invalidation is required to the requester (or already done),
+                        False if it is timed out (requester can keep it for now, but must check again later)
+        '''
         if requester not in self._cache_sharer.keys():
             return  # requester might already invalidate the data
         # assert requester in self._cache_sharer.keys(), f"Requester must be in the cache sharer list: {requester} not in {self._cache_sharer.keys()}"
@@ -114,6 +118,17 @@ class RoyCacheDirMSI(RoyCache):
 
         # wait
         await async_handle.wait()
+
+    def _clean_up_(self):
+        # system is likely terminating - clear the cache sharer
+        for sharer in self._cache_sharer.keys():
+            async_handle = self._cache_sharer[sharer]
+            if async_handle:
+                async_handle.set()
+            print(f"TERM | Sharer {sharer[:16]} | Invalidated", flush=True)
+        while len(self._cache_sharer) > 0:
+            # wait for 1 sec
+            asyncio.sleep(1)
 
 class RoyCacheLocalMSI(RoyCache):
     def __init__(self) -> None:
@@ -157,10 +172,15 @@ class RoyProxy:
         if self._cache:
             await self._cache.transition(requester, permission)
 
-    async def install_invalidate_handle(self, requester):
+    async def install_invalidate_handle(self, requester, timeout=3):
         assert self._cache, "Cache must be enabled"
-        await self._cache.install_invalidate_handle(requester)
+        await self._cache.install_invalidate_handle(requester, timeout)
         print(f"Requester {requester[:16]} | Invalidated", flush=True)
+
+    def __del__(self):
+        print(f"RoyProxy {self} is deleted", flush=True)
+        if self._cache:
+            self._cache._clean_up_()
 
 @ray.remote
 class ActorTest:
