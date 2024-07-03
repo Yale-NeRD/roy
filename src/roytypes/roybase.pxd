@@ -25,9 +25,16 @@ cdef class RoyBase:
     cdef int per_chunk_lock
     cdef object _roy_free_to_use
     cdef list _roy_inval_threads
+    cdef object _roy_meta
+    cdef object _roy_meta_ref
 
     cdef void _init_new_chunk_list_(self, int num_chunks=*, object value=*)
     cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx, int timeout)
     cdef void _fetch_chunk_(self, int chunk_idx)
-    cdef void _evict_chunk_(self, int chunk_idx)
+    cdef void _evict_chunk_(self, int chunk_idx, int remove_data=*)
     # cdef void _flush_chunks_(self)
+
+    # Metadata management
+    cdef void _init_meta(self, int num_chunks)
+    cdef void _fetch_and_update_meta(self)
+    cdef void _evict_meta(self)

@@ -68,6 +68,8 @@ class RoyCacheDirMSI(RoyCache):
 
         # we need invalidation if the current state is MODIFIED
         if self._cache_state == CacheState.MODIFIED:
+            # Now the invalidation is deprecated and replaced with eviction during lock release
+            assert False, "Invalidation is deprecated. Use eviction instead"
             # check sharer list
             sent = 0
             self._waiting_data_ok.clear()   # clear => we need data now
@@ -100,7 +102,7 @@ class RoyCacheDirMSI(RoyCache):
         elif permission == CachePermission.EVICT:
             self.process_evict(requester)
 
-        print(f"Requester {requester[:16]} | Perm: {permission} | Cache state: {self._cache_state} | Sharers: {self._cache_sharer}", flush=True)
+        # print(f"Requester {requester[:16]} | Perm: {permission} | Cache state: {self._cache_state} | Sharers: {self._cache_sharer}", flush=True)
         return True
 
     async def install_invalidate_handle(self, requester, timeout):
@@ -162,15 +164,26 @@ class RoyProxy:
     async def get(self, requester, permission=CachePermission.WRITE):
         if self._cache:
             await self._cache.transition(requester, permission)
+        # print the amount of data
+        try:
+            print(f"FETCH: Requester {requester[:16]} | Data size: {len(self._data)}", flush=True)
+        except Exception as e:
+            print(f"Error occurred: {e}", flush=True)
         return self._data
 
-    async def set(self, requester, data, permission=CachePermission.EVICT):
+    async def set(self, requester, data, permission=CachePermission.EVICT, verbose=False):
         '''
         Set the data and invalidate the cache
         '''
         self._data = data
         if self._cache:
             await self._cache.transition(requester, permission)
+        # print the amount of data
+        if verbose:
+            try:
+                print(f"EVICT: Requester {requester[:16]} | Data size: {len(data)}", flush=True)
+            except Exception as e:
+                print(f"Error occurred: {e}", flush=True)
 
     async def install_invalidate_handle(self, requester, timeout=3):
         assert self._cache, "Cache must be enabled"

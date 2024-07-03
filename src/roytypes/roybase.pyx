@@ -12,6 +12,10 @@ from asyncio import Event
 import threading
 from threading import Thread, Lock
 
+class RoyMeta:
+    def __init__(self, int num_chunks):
+        self.chunk_versions = [0 for _ in range(num_chunks)]
+
 cdef class RoyChunk:
     # == variables: relocated to .pxd ==
 
@@ -45,16 +49,23 @@ cdef class RoyChunk:
 cdef class RoyBase:
     # == variables: relocated to .pxd ==
 
-    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1):
+    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1):
         '''
         @lock: lock object for synchronization. For deserialization, it should be given.
         @chunk_ref_list: list of ray reference to each chunk for deserializing
         '''
+        # TODO: include chunk_ref_list into meta_ref (we can get it from remote only once at the beginning
+        # and keep the local version separately because self.chunk_ref_list is read-only anyway)
         if num_chunks <= 0:
             raise ValueError("Number of buckets must be greater than 0")
         if not ray.is_initialized():
             raise AssertionError(f"Ray must be initialized to use {self.__class__.__name__}")
         self.num_chunks = num_chunks
+
+        if meta_ref is None:
+            self._init_meta(num_chunks)
+        else:
+            self._roy_meta_ref = meta_ref
 
         if chunk_ref_list is not None:
             # likely deserialized in a new actor/worker
@@ -65,6 +76,7 @@ cdef class RoyBase:
             self._init_new_chunk_list_(num_chunks, value)
             assert self.chunk_ref_list is not None
 
+        # TODO: replace chunk_list with self.chunk_ref_list.cache
         self.chunk_list = [None for _ in range(len(self.chunk_ref_list))]
         if lock is None:
             self._lock = RoyLock.remote()
@@ -75,6 +87,36 @@ cdef class RoyBase:
         self._roy_free_to_use = Event()
         self._roy_free_to_use.set()  # Initially, not in use
         self._roy_inval_threads = [None for _ in range(len(self.chunk_ref_list))]
+
+    cdef void _init_meta(self, int num_chunks):
+        self._roy_meta = RoyMeta(num_chunks)
+        self._roy_meta_ref = RoyProxy.remote(
+                self._roy_meta, cache_class=None)
+
+    cdef void _fetch_and_update_meta(self):
+        assert self._roy_meta_ref is not None, "Metadata reference must be initialized"
+        new_meta = ray.get(self._roy_meta_ref.get_nocache.remote())
+        # specific logic to compare local and remote version
+        if self._roy_meta is None:
+            self._roy_meta = new_meta
+            return
+
+        cdef int stale_entries = 0
+        cdef int cached_entries = 0
+        for chunk_idx in range(self.num_chunks):
+            if self.chunk_list[chunk_idx] is not None:
+                cached_entries += 1
+            if new_meta.chunk_versions[chunk_idx] > self._roy_meta.chunk_versions[chunk_idx]:
+                if self.chunk_list[chunk_idx] is not None:
+                    stale_entries += 1
+                # give up the local data; reference should be the same
+                self.chunk_list[chunk_idx] = None
+        self._roy_meta = new_meta
+        # print(f"Stale entries: {stale_entries} / {cached_entries}", flush=True)
+
+    cdef void _evict_meta(self):
+        assert self._roy_meta_ref is not None, "Metadata reference must be initialized"
+        ray.get(self._roy_meta_ref.set_nocache.remote(self._roy_meta))
 
     cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         raise NotImplementedError("This method should be implemented in the subclass")
@@ -110,25 +152,28 @@ cdef class RoyBase:
                 return
 
     cdef void _fetch_chunk_(self, int chunk_idx):
-        timeout = 3
-        if self._roy_inval_threads[chunk_idx] is not None:
-            self._roy_inval_threads[chunk_idx].join()
-
+        # timeout = 3
+        # if self._roy_inval_threads[chunk_idx] is not None:
+        #     self._roy_inval_threads[chunk_idx].join()
+        assert self.chunk_list[chunk_idx] is None, "Chunk must be None to fetch"
+        assert self.chunk_ref_list[chunk_idx] is not None, "Chunk reference must be initialized"
+        assert self._roy_meta is not None, "Metadata must be initialized/fetched"
         proxy_ref = self.chunk_ref_list[chunk_idx].ref
         # TODO: fault tolerance for actor termination
         self.chunk_list[chunk_idx] = ray.get(proxy_ref.get.remote(gen_roy_id()))
         # print(f"Fetched chunk {chunk_idx}", flush=True)
-        
-        thread = Thread(target=self._invalidate_cache, args=(proxy_ref, chunk_idx, timeout))
-        thread.start()
-        self._roy_inval_threads[chunk_idx] = thread
+        self._roy_meta.chunk_versions[chunk_idx] += 1
+        # thread = Thread(target=self._invalidate_cache, args=(proxy_ref, chunk_idx, timeout))
+        # thread.start()
+        # self._roy_inval_threads[chunk_idx] = thread
 
-    cdef void _evict_chunk_(self, int chunk_idx):
+    cdef void _evict_chunk_(self, int chunk_idx, int remove_data=False):
         if self.chunk_list[chunk_idx] is None:
             return
         proxy_ref = self.chunk_ref_list[chunk_idx].ref
         data = self.chunk_list[chunk_idx]
-        self.chunk_list[chunk_idx] = None
+        if remove_data:
+            self.chunk_list[chunk_idx] = None
         try:
             # print(f"Evicting chunk {chunk_idx}", flush=True)
             ray.get(proxy_ref.set.remote(gen_roy_id(), data))
@@ -137,9 +182,13 @@ cdef class RoyBase:
             print(f"Exception for evicting chunk {chunk_idx}: {e.__class__.__name__} :: {e}", flush=True)
 
     def __lock__(self):
+        # print(f"Locking...{self.__class__.__name__}", flush=True)
         self._local_lock.acquire()
+        # print(f"Locked: {self._local_lock}", flush=True)
         if self._lock is not None:
             ray.get(self._lock.lock.remote())
+        self._fetch_and_update_meta()
+        # print(f"Locked and fetched meta: {self._lock}", flush=True)
 
     def _flush_chunks_(self):
         # remove all chunk_list
@@ -150,12 +199,14 @@ cdef class RoyBase:
                 # print(f"Evicted chunk {chunk_idx}", flush=True)
 
     def __unlock__(self, cache=True):
-        if not cache:
-            self._flush_chunks_()
-
+        # print(f"Unlocking...{self.__class__.__name__}", flush=True)
+        self._flush_chunks_()
+        self._evict_meta()
         if self._lock is not None:
             ray.get(self._lock.unlock.remote())
+        # print(f"Unlocked: {self._lock}", flush=True)
         self._local_lock.release()
+        # print(f"Released: {self._local_lock}", flush=True)
 
     def flush(self):
         for chunk_idx, _ in enumerate(self.chunk_list):

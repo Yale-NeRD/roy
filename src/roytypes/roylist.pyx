@@ -21,13 +21,13 @@ cdef class ListChunkMeta:
 cdef class RoyList(RoyBase):
     cdef ListChunkMeta _meta
 
-    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1, ListChunkMeta meta=ListChunkMeta()):
+    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1, ListChunkMeta meta=ListChunkMeta()):
         # TODO: length must be calculated from _meta.chunk_used or synchronized over RoyProxy
         '''
         @lock: lock object for synchronization. For deserialization, it should be given.
         @chunk_ref_list: list of ray reference to each chunk for deserializing
         '''
-        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, length)
+        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, meta_ref, length)
         # if value is not None:
         #     self._init_new_chunk_list_(num_chunks, value)
         self._meta = meta
@@ -232,11 +232,11 @@ cdef class RoyList(RoyBase):
             yield self[i]
 
     def __reduce__(self):
-        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self.length, self._lock, self.per_chunk_lock, self._meta))
+        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self._roy_meta_ref, self.length, self._lock, self.per_chunk_lock, self._meta))
 
     @staticmethod
-    def rebuild(chunk_ref_list, num_chunks, length, lock, per_chunk_lock, meta):
-        return RoyList(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, length, meta)
+    def rebuild(chunk_ref_list, num_chunks, meta_ref, length, lock, per_chunk_lock, meta):
+        return RoyList(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, meta_ref, length, meta)
 
     def __repr__(self):
         return f"RoyList({self.chunk_list})"

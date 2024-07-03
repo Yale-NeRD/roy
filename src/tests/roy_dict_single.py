@@ -3,12 +3,12 @@ import ray
 import sys
 import os
 import time
+import threading
 
 # Add root directory to the sys path
 current_directory = os.path.dirname(os.path.abspath(__file__))
 parent_directory = os.path.dirname(current_directory)
 sys.path.append(parent_directory)
-sys.path.append(parent_directory + '/cpproy')
 sys.path.append(parent_directory + '/roytypes')
 
 from roytypes import RoyDict
@@ -82,12 +82,11 @@ def test_large_insertions():
         assert roydict[f'key{i}'] == f'value{i}'
     roydict.flush()
 
-import threading
-
+# == multi threading tests ==
 def test_concurrent_access():
     roydict = RoyDict()
-    num_threads = 3
-    num_entries_per_thread = 5
+    num_threads = 5
+    num_entries_per_thread = 10
 
     def insert_entries(start_index):
         with roydict: 
@@ -109,4 +108,35 @@ def test_concurrent_access():
 
     print(f"Length: {len(roydict)}", flush=True)
     assert len(roydict) == num_threads * num_entries_per_thread
+    roydict.flush()
+
+
+def test_concurrent_taking_turn():
+    roydict = RoyDict()
+    num_threads = 5
+    num_entries_per_thread = 10
+    num_round = 2
+    barrier = threading.Barrier(num_threads)
+
+    def insert_entries(start_index, num_round, data_per_round):
+        for round in range(num_round):
+            with roydict: 
+                print(f"Thread {start_index} started", flush=True)
+                for i in range(start_index, start_index + num_entries_per_thread):
+                    roydict[i + round * data_per_round] = f'value{i + round * data_per_round}'
+                print(f"Thread {start_index} inserted {num_entries_per_thread} entries | length: {len(roydict)}", flush=True)
+            barrier.wait()
+        print(f"Thread {start_index} done", flush=True)
+
+    threads = []
+    for i in range(num_threads):
+        thread = threading.Thread(target=insert_entries, args=(i * num_entries_per_thread, num_round, num_entries_per_thread * num_threads))
+        threads.append(thread)
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+    print(f"Length: {len(roydict)}", flush=True)
+    assert len(roydict) == num_threads * num_entries_per_thread * num_round
     roydict.flush()

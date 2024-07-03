@@ -9,8 +9,8 @@ from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDi
 from roytypes.roybase cimport RoyBase, RoyChunk
 
 cdef class RoyDict(RoyBase):
-    def __init__(self, int num_chunks=32, dict value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1):
-        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, length)
+    def __init__(self, int num_chunks=32, dict value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1):
+        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, meta_ref, length)
 
     cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         # Prepare buckets
@@ -92,11 +92,11 @@ cdef class RoyDict(RoyBase):
         self.length = 0
 
     @staticmethod
-    def rebuild(chunk_ref_list, num_chunks, length, lock, per_chunk_lock):
-        return RoyDict(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, length)
+    def rebuild(chunk_ref_list, num_chunks, meta_ref, length, lock, per_chunk_lock):
+        return RoyDict(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, meta_ref, length)
 
     def __reduce__(self):
-        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self.length, self._lock, self.per_chunk_lock))
+        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self._roy_meta_ref, self.length, self._lock, self.per_chunk_lock))
 
     def __repr__(self):
         '''

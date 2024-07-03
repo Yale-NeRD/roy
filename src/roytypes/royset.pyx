@@ -10,13 +10,13 @@ from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDi
 from roytypes.roybase cimport RoyBase, RoyChunk
 
 cdef class RoySet(RoyBase):
-    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, int length=-1):
+    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1):
         # TODO: length must be calculated from _meta.chunk_used or synchronized over RoyProxy
         '''
         @lock: lock object for synchronization. For deserialization, it should be given.
         @chunk_ref_list: list of ray reference to each chunk for deserializing
         '''
-        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, length)
+        super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, meta_ref, length)
 
     cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         # prepare buckets
@@ -38,17 +38,25 @@ cdef class RoySet(RoyBase):
 
     def add(self, object item):
         cdef int bucket_idx = hash(item) % self.num_chunks
-        print(f"Adding {item} | {hash(item)}", flush=True)
+        # print(f"Adding {item} | {hash(item)}", flush=True)
 
         if self.chunk_list[bucket_idx] is None:
             self._fetch_chunk_(bucket_idx)
         self.chunk_list[bucket_idx].add(item)
 
+    def remove(self, object item):
+        cdef int bucket_idx = hash(item) % self.num_chunks
+
+        if self.chunk_list[bucket_idx] is None:
+            self._fetch_chunk_(bucket_idx)
+        self.chunk_list[bucket_idx].remove(item)
+
     @staticmethod
-    def rebuild(chunk_ref_list, num_chunks, length, lock, per_chunk_lock):
-        return RoySet(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, length)
+    def rebuild(chunk_ref_list, num_chunks, meta_ref, length, lock, per_chunk_lock):
+        return RoySet(num_chunks, None, lock, per_chunk_lock, chunk_ref_list, meta_ref, length)
 
     def __reduce__(self):
-        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self.length, self._lock, self.per_chunk_lock))
+        return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self._roy_meta_ref, self.length, self._lock, self.per_chunk_lock))
+
     def __repr__(self):
         return f"RoySet({self.chunk_list})"
