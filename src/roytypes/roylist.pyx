@@ -39,14 +39,16 @@ cdef class RoyList(RoyBase):
                 cache_class=None)
             self._meta.last_used_chunk = RoyProxy.remote(0, None)
 
-    cdef void _init_new_chunk_list_(self, int num_chunks=32, list value=None):
+    cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         '''
         Called in super().__init__ to initialize the chunk list
         '''
         if value is None:
             chunked_lists = [[] for _ in range(num_chunks)]
         else:
-            chunk_size = (len(value) + num_chunks - 1) // num_chunks  # calculate the size of each chunk
+            assert isinstance(value, list), "Value must be a list"
+            # chunk_size = (len(value) + num_chunks - 1) // num_chunks  # calculate the size of each chunk
+            chunk_size = self._meta.max_element_per_chunk
             chunked_lists = [value[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
         self.chunk_ref_list = [RoyChunk(RoyProxy.remote(chunk, RoyCacheDirMSI), RoyCacheLocalMSI()) for chunk in chunked_lists]
         self.length = len(value) if value else 0
@@ -189,7 +191,7 @@ cdef class RoyList(RoyBase):
         return found
 
     def clear(self):
-        # Fush any items in the cache
+        # Flush any items in the cache
         for idx, chunk in enumerate(self.chunk_list):
             # Fetch any existing chunk
             if chunk is None:

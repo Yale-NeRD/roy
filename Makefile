@@ -5,6 +5,9 @@ build: build_pyx pydep
 test: build
 	@python -m pytest -v src/tests/*.py
 
+test_debug: build
+	@python -m pytest -v src/tests/roy_dict_single.py
+
 test_py: build_py pydep
 	@cd src/pyroy && python -m pytest -v
 

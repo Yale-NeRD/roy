@@ -70,13 +70,13 @@ cdef class RoyBase:
             self._lock = RoyLock.remote()
         else:
             self._lock = lock
-        self._eviction_lock = Lock()
+        self._local_lock = Lock()
         self.per_chunk_lock = per_chunk_lock
-        self._roy_in_use = Event()
-        self._roy_in_use.clear()  # Initially, not in use
+        self._roy_free_to_use = Event()
+        self._roy_free_to_use.set()  # Initially, not in use
         self._roy_inval_threads = [None for _ in range(len(self.chunk_ref_list))]
 
-    cdef void _init_new_chunk_list_(self, int num_chunks=32, list value=None):
+    cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         raise NotImplementedError("This method should be implemented in the subclass")
 
     # Define a function to invalidate the cache
@@ -124,23 +124,22 @@ cdef class RoyBase:
         self._roy_inval_threads[chunk_idx] = thread
 
     cdef void _evict_chunk_(self, int chunk_idx):
-        with self._eviction_lock:
-            if self.chunk_list[chunk_idx] is None:
-                return
-            proxy_ref = self.chunk_ref_list[chunk_idx].ref
-            data = self.chunk_list[chunk_idx]
-            self.chunk_list[chunk_idx] = None
-            try:
-                # print(f"Evicting chunk {chunk_idx}", flush=True)
-                ray.get(proxy_ref.set.remote(gen_roy_id(), data))
-            except Exception as e:
-                #print exception type
-                print(f"Exception for evicting chunk {chunk_idx}: {e.__class__.__name__} :: {e}", flush=True)
+        if self.chunk_list[chunk_idx] is None:
+            return
+        proxy_ref = self.chunk_ref_list[chunk_idx].ref
+        data = self.chunk_list[chunk_idx]
+        self.chunk_list[chunk_idx] = None
+        try:
+            # print(f"Evicting chunk {chunk_idx}", flush=True)
+            ray.get(proxy_ref.set.remote(gen_roy_id(), data))
+        except Exception as e:
+            #print exception type
+            print(f"Exception for evicting chunk {chunk_idx}: {e.__class__.__name__} :: {e}", flush=True)
 
     def __lock__(self):
+        self._local_lock.acquire()
         if self._lock is not None:
             ray.get(self._lock.lock.remote())
-        self._roy_in_use.set()
 
     def _flush_chunks_(self):
         # remove all chunk_list
@@ -156,7 +155,7 @@ cdef class RoyBase:
 
         if self._lock is not None:
             ray.get(self._lock.unlock.remote())
-        self._roy_in_use.clear()
+        self._local_lock.release()
 
     def flush(self):
         for chunk_idx, _ in enumerate(self.chunk_list):

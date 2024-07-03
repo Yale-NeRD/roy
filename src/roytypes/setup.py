@@ -11,5 +11,6 @@ setup(
     ext_modules = cythonize([
         "roybase.pyx",
         "roylist.pyx",
-        "royset.pyx"]),
+        "royset.pyx",
+        "roydict.pyx",]),
 )

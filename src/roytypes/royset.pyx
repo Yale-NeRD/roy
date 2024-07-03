@@ -18,10 +18,11 @@ cdef class RoySet(RoyBase):
         '''
         super().__init__(num_chunks, value, lock, per_chunk_lock, chunk_ref_list, length)
 
-    cdef void _init_new_chunk_list_(self, int num_chunks=32, list value=None):
+    cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         # prepare buckets
         bucketized_sets = [set() for _ in range(num_chunks)]
         if value is not None:
+            assert isinstance(value, list) or isinstance(value, set), "Value must be a list or set"
             for item in value:  # work for any iterable (list, set, etc.)
                 bucketized_sets[hash(item) % num_chunks].add(item)
         self.chunk_ref_list = [RoyChunk(RoyProxy.remote(bucket, RoyCacheDirMSI), RoyCacheLocalMSI()) for bucket in bucketized_sets]
