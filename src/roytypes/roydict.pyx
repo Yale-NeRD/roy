@@ -73,7 +73,6 @@ cdef class RoyDict(RoyBase):
     def __len__(self):
         # TODO: cache the length dynamically
         self._ensure_chunks_()
-        print(self.chunk_list, flush=True)
         return sum([len(chunk) for chunk in self.chunk_list])
 
     def __contains__(self, object key):
