@@ -21,14 +21,19 @@ jobs:
         auto-update-conda: true
         python-version: ${{ matrix.python-version }}
 
+    - name: Initialize Conda
+      run: conda init bash
+
     - name: Create and activate Conda environment
+      shell: bash -l {0}
       run: |
         conda create -n myenv python=${{ matrix.python-version }} -y
         echo "CONDA_PREFIX=$(conda env list | grep myenv | awk '{print $2}')" >> $GITHUB_ENV
         conda activate myenv
-        conda install pip
+        conda install pip -y
 
     - name: Install Python dependencies
+      shell: bash -l {0}
       run: |
         conda activate myenv
         pip install -r src/pyroy/requirements.txt
@@ -46,12 +51,14 @@ jobs:
         cargo install cargo-audit
 
     - name: Install additional Python dependencies
+      shell: bash -l {0}
       run: |
         conda activate myenv
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
     - name: Lint with flake8
+      shell: bash -l {0}
       run: |
         conda activate myenv
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
