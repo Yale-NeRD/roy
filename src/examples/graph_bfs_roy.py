@@ -19,6 +19,7 @@ from ray.util.queue import Queue
 class SharedState:
     def __init__(self):
         self.visited = RoySet()
+        self.queued = RoySet()
         self.queue = Queue()
         self.found = RoyList()
 
@@ -32,20 +33,26 @@ class Worker:
     def get_next_node(self):
         with self.shared_state as shared_state:
             try:
-                return shared_state.queue.get(timeout=0.1)
+                node_id = shared_state.queue.get(timeout=0.1)
+                shared_state.queued.remove(node_id)
+                return node_id
             except IndexError:
                 return None
             except ray.util.queue.Empty:
                 # no more nodes to process, exit
                 return None
 
-    def update_nodes(self, node_id):
+    def update_nodes(self, idx, node_id):
         neighbors = self.graph.nodes[node_id].neighbors
+        print(f"Worker {idx} | node_id: {node_id} | neighbors: {neighbors}", flush=True)
         with self.shared_state as shared_state:
             shared_state.visited.add(node_id)
-            for node_id in neighbors:
-                if node_id not in shared_state.visited:
-                    shared_state.queue.put(node_id)
+            print(f"Worker {idx} | node_id: {node_id} | visited: {shared_state.visited}", flush=True)
+            for neighbor_id in neighbors:
+                if neighbor_id not in shared_state.visited and neighbor_id not in shared_state.queued:
+                    shared_state.queue.put(neighbor_id)
+                    shared_state.queued.add(neighbor_id)  # Add to the set when queued
+                    print(f"Worker {idx} | neighbor_id: {neighbor_id} | added to queue", flush=True)
             # Note) there is only one data transfer after the lock is released,
             #       unlike Ray who calls RPC multiple times
 
@@ -74,7 +81,7 @@ class Worker:
                 # print(f"Flushed {idx}", flush=True)
                 return node_id
 
-            self.update_nodes(node_id)
+            self.update_nodes(idx, node_id)
 
 # Reuse Ray's scheduling runtime
 def distributed_bfs(graph, start_node, target_value, num_workers=4):
@@ -84,6 +91,7 @@ def distributed_bfs(graph, start_node, target_value, num_workers=4):
     # Add the starting node to the queue
     with shared_state_obj as shared_state:
         shared_state.queue.put(start_node)
+        shared_state.queued.add(start_node)
 
     # Initialize worker actors
     workers = [Worker.remote(shared_state_obj, graph) for _ in range(num_workers)]
