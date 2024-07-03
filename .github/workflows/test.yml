@@ -15,14 +15,22 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - uses: conda-incubator/setup-miniconda@v3
+    - name: Set up Miniconda
+      uses: conda-incubator/setup-miniconda@v3
       with:
         auto-update-conda: true
         python-version: ${{ matrix.python-version }}
 
+    - name: Create and activate Conda environment
+      run: |
+        conda create -n myenv python=${{ matrix.python-version }} -y
+        echo "CONDA_PREFIX=$(conda env list | grep myenv | awk '{print $2}')" >> $GITHUB_ENV
+        conda activate myenv
+        conda install pip
+
     - name: Install Python dependencies
       run: |
-        conda install pip
+        conda activate myenv
         pip install -r src/pyroy/requirements.txt
 
     - name: Set up Rust ${{ matrix.rust-version }}
@@ -37,23 +45,17 @@ jobs:
         rustup component add clippy
         cargo install cargo-audit
 
-    - name: Install dependencies
+    - name: Install additional Python dependencies
       run: |
-        python -m pip install --upgrade pip
+        conda activate myenv
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
     - name: Lint with flake8
       run: |
-        # stop the build if there are Python syntax errors or undefined names
+        conda activate myenv
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-
-    - name: Set up Conda environment
-      run: |
-        conda create -n myenv python=${{ matrix.python-version }}
-        echo "CONDA_PREFIX=$(conda env list | grep myenv | awk '{print $2}')" >> $GITHUB_ENV
 
     - name: Test with pytest
       shell: bash -l {0}
