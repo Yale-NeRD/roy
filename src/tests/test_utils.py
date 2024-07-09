@@ -21,3 +21,16 @@ def ray_fresh_start():
             ray.shutdown()
 
     ray.init(runtime_env={"py_modules": [parent_directory + "/roytypes"]})
+
+def ray_shutdown():
+    ray.shutdown()
+    print("Ray shutdown complete", flush=True)
+    retry_count = 0
+    while ray.is_initialized():
+        # wait for ray to shutdown
+        time.sleep(1)
+        print("Waiting for ray to shutdown from the previous test case...")
+        retry_count += 1
+        if retry_count > 3:
+            print("Ray did not shutdown properly. Exiting...")
+            ray.shutdown()
