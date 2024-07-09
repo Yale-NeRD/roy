@@ -40,11 +40,6 @@ cdef class RoyDict(RoyBase):
             self._fetch_chunk_(bucket_idx)
         del self.chunk_list[bucket_idx][key]
 
-    def _ensure_chunks_(self):
-        for i in range(self.num_chunks):
-            if self.chunk_list[i] is None:
-                self._fetch_chunk_(i)
-
     def keys(self):
         # It is expensive operation as it requires fetching all chunks
         keys = []
@@ -87,7 +82,7 @@ cdef class RoyDict(RoyBase):
         for idx, chunk in enumerate(self.chunk_list):
             # Clear the chunk and write back
             chunk.clear()
-            self._evict_chunk_(idx)
+            # self._evict_chunk_(idx)   # Make it lazy eviction (at release time)
         # Reset the meta data
         self.length = 0
 

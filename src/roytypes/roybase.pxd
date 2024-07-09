@@ -33,6 +33,7 @@ cdef class RoyBase:
     cdef void _fetch_chunk_(self, int chunk_idx)
     cdef void _evict_chunk_(self, int chunk_idx, int remove_data=*)
     # cdef void _flush_chunks_(self)
+    cdef void _ensure_chunks_(self)
 
     # Metadata management
     cdef void _init_meta(self, int num_chunks)

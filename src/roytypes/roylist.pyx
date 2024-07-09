@@ -192,14 +192,12 @@ cdef class RoyList(RoyBase):
 
     def clear(self):
         # Flush any items in the cache
+        self._ensure_chunks_()
         for idx, chunk in enumerate(self.chunk_list):
-            # Fetch any existing chunk
-            if chunk is None:
-                self._fetch_chunk_(idx)
-                chunk = self.chunk_list[idx]
             # Clear the chunk and write back
             chunk.clear()
-            self._evict_chunk_(idx)
+            # self._evict_chunk_(idx)   # Make it lazy eviction (at release time)
+
         # Reset the meta data
         self.length = 0
         ray.get(self._meta.last_used_chunk.set_nocache.remote(0))

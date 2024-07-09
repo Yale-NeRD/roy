@@ -59,4 +59,10 @@ cdef class RoySet(RoyBase):
         return (self.rebuild, (self.chunk_ref_list, self.num_chunks, self._roy_meta_ref, self.length, self._lock, self.per_chunk_lock))
 
     def __repr__(self):
-        return f"RoySet({self.chunk_list})"
+        # merge all chunks into one set, except None
+        return f"RoySet({set().union(*[chunk for chunk in self.chunk_list if chunk is not None])})"
+
+    def __len__(self):
+        self._ensure_chunks_()
+        self.length = sum(len(chunk) for chunk in self.chunk_list if chunk is not None)
+        return self.length

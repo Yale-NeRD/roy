@@ -112,7 +112,12 @@ cdef class RoyBase:
                 # give up the local data; reference should be the same
                 self.chunk_list[chunk_idx] = None
         self._roy_meta = new_meta
-        # print(f"Stale entries: {stale_entries} / {cached_entries}", flush=True)
+
+    cdef void _ensure_chunks_(self):
+        for i in range(self.num_chunks):
+            if self.chunk_list[i] is None:
+                self._fetch_chunk_(i)
+            # print(f"Stale entries: {stale_entries} / {cached_entries}", flush=True)
 
     cdef void _evict_meta(self):
         assert self._roy_meta_ref is not None, "Metadata reference must be initialized"

@@ -1,23 +1,15 @@
 import pytest
 import ray
-import sys
-import os
 import time
 
-# Add root directory to the sys path
-current_directory = os.path.dirname(os.path.abspath(__file__))
-parent_directory = os.path.dirname(current_directory)
-sys.path.append(parent_directory)
-sys.path.append(parent_directory + '/cpproy')
-sys.path.append(parent_directory + '/roytypes')
-
-# from roytypes import RoySet, RoyList, remote, remote_worker
+from test_utils import ray_fresh_start
 from roytypes import RoyList
 
 @pytest.fixture(scope="module", autouse=True)
 def ray_init_shutdown():
-    ray.init(runtime_env={"py_modules": [parent_directory + "/roytypes"]})
+    ray_fresh_start()
     yield
+    time.sleep(1)
     ray.shutdown()
 
 @pytest.fixture
