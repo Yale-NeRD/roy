@@ -28,6 +28,9 @@ cdef class RoyBase:
     cdef object _roy_meta
     cdef object _roy_meta_ref
 
+    # debugging Metadata
+    cdef int _last_msg_time
+
     cdef void _init_new_chunk_list_(self, int num_chunks=*, object value=*)
     cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx, int timeout)
     cdef void _fetch_chunk_(self, int chunk_idx)

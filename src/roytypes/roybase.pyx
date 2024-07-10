@@ -87,6 +87,8 @@ cdef class RoyBase:
         self._roy_free_to_use = Event()
         self._roy_free_to_use.set()  # Initially, not in use
         self._roy_inval_threads = [None for _ in range(len(self.chunk_ref_list))]
+        # debugging meta
+        _last_msg_time = time.time()
 
     cdef void _init_meta(self, int num_chunks):
         self._roy_meta = RoyMeta(num_chunks)
@@ -184,7 +186,9 @@ cdef class RoyBase:
             ray.get(proxy_ref.set.remote(gen_roy_id(), data))
         except Exception as e:
             #print exception type
-            print(f"Exception for evicting chunk {chunk_idx}: {e.__class__.__name__} :: {e}", flush=True)
+            if self._last_msg_time + 1 < time.time():
+                print(f"Exception for evicting chunk {chunk_idx}: {e.__class__.__name__} :: {e}", flush=True)
+                self._last_msg_time = time.time()
 
     def __lock__(self):
         # print(f"Locking...{self.__class__.__name__}", flush=True)
