@@ -59,6 +59,7 @@ cdef class RoyBase:
         if num_chunks <= 0:
             raise ValueError("Number of buckets must be greater than 0")
         if not ray.is_initialized():
+            print(f"Ray must be initialized to use {self.__class__.__name__}", flush=True)
             raise AssertionError(f"Ray must be initialized to use {self.__class__.__name__}")
         self.num_chunks = num_chunks
 

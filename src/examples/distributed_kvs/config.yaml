@@ -1,0 +1,7 @@
+num_workers: 8
+total_requests: 100000
+total_clients: 8
+total_keys: 1000
+value_size: 1000
+overlap_ratio: 0.1
+set_ratio: 0.1

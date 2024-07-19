@@ -65,6 +65,7 @@ cdef class RoyList(RoyBase):
             index -= chunk_used[i]
         if self.chunk_list[chunk_idx] is None:
             self._fetch_chunk_(chunk_idx)
+        # print(f"Fetching chunk {chunk_idx} for index {index}", flush=True)
         return self.chunk_list[chunk_idx][index]
 
     def __setitem__(self, int index, object value):
@@ -226,7 +227,7 @@ cdef class RoyList(RoyBase):
             return False
 
     def __iter__(self):
-        for i in range(self.length):
+        for i in range(self.__len__()):
             yield self[i]
 
     def __reduce__(self):
