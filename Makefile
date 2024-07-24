@@ -40,3 +40,7 @@ clean:
 # example
 example: build_py pydep
 	@cd src/examples && python pi_compute.py
+
+# web docs
+deploy_web:
+	@cd website && USE_SSH=true npm run deploy
