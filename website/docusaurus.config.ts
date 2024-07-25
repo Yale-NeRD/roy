@@ -3,8 +3,8 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Roy',
-  tagline: 'tagline',
+  title: 'Roy: an easy way to build distributed systems on Ray',
+  tagline: 'with mutable shared objects and a multi-threading-like programming model.',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
@@ -58,9 +58,9 @@ const config: Config = {
     // Replace with your project's social card
     image: 'img/docusaurus-social-card.jpg',
     navbar: {
-      title: 'My Site',
+      title: 'Roy',
       logo: {
-        alt: 'My Site Logo',
+        alt: 'Roy Logo',
         src: 'img/logo.svg',
       },
       items: [
@@ -69,6 +69,7 @@ const config: Config = {
           sidebarId: 'tutorialSidebar',
           position: 'left',
           label: 'Tutorial',
+          to: '/docs',
         },
         // {to: '/blog', label: 'Blog', position: 'left'},
         {
@@ -86,7 +87,7 @@ const config: Config = {
           items: [
             {
               label: 'Tutorial',
-              to: '/docs/intro',
+              to: '/docs/tutorial',
             },
           ],
         },

@@ -19,16 +19,17 @@
     "@docusaurus/preset-classic": "3.4.0",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
+    "docusaurus": "^1.14.7",
     "prism-react-renderer": "^2.3.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "yarn": "^1.22.22"
+    "yarn": "2.4.3"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "3.4.0",
     "@docusaurus/tsconfig": "3.4.0",
     "@docusaurus/types": "3.4.0",
-    "typescript": "~5.2.2"
+    "typescript": "5.5.4"
   },
   "browserslist": {
     "production": [

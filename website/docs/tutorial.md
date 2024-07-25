@@ -2,9 +2,13 @@
 sidebar_position: 1
 ---
 
-# Tutorial Intro
+# Roy Tutorial
 
-Let's discover **Docusaurus in less than 5 minutes**.
+Let's discover **Roy in less than 5 minutes**.
+
+---
+
+Intiailization code from Docusaurus
 
 ## Getting Started
 
