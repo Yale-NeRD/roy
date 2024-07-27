@@ -4,14 +4,14 @@ import os
 
 # Add root directory to the sys path
 current_directory = os.path.dirname(os.path.abspath(__file__))
-parent_directory = os.path.dirname(current_directory)
-sys.path.append(parent_directory)
-sys.path.append(parent_directory + '/cpproy')
-sys.path.append(parent_directory + '/roytypes')
+root_directory = os.path.dirname(os.path.dirname(current_directory))    # ../../
+sys.path.append(root_directory)
+sys.path.append(root_directory + '/cpproy')
+sys.path.append(root_directory + '/roytypes')
 
-from roytypes import RoySet, RoyList, remote, remote_worker
+from roytypes import RoySet, RoyList, remote
 
-import ray  # `pip install ray` for this example
+import ray
 from graph_bfs_base import run_bfs
 from ray.util.queue import Queue
 
@@ -24,7 +24,7 @@ class SharedState:
         self.found = RoyList()
 
 # See the similarity with the single-threaded program
-@remote_worker
+@ray.remote
 class Worker:
     def __init__(self, shared_state, graph):
         self.shared_state = shared_state    # just a reference, out of sync
@@ -57,7 +57,6 @@ class Worker:
             #       unlike Ray who calls RPC multiple times
 
     def search(self, idx, target_value):
-        # print(f"Worker {idx} | started - {str(ray.get_runtime_context().get_worker_id())}", flush=True)
         while True:
             node_id = self.get_next_node()
             if node_id is None:
@@ -77,8 +76,6 @@ class Worker:
                 with self.shared_state as shared_state:
                     shared_state.found.append(True)
                 print(f"Found target node {idx}: {node_id}", flush=True)
-                # self.shared_state.roy_flush()
-                # print(f"Flushed {idx}", flush=True)
                 return node_id
 
             self.update_nodes(idx, node_id)
@@ -108,7 +105,7 @@ def distributed_bfs(graph, start_node, target_value, num_workers=4):
 # Example usage
 if __name__ == "__main__":
     try:
-        ray.init(runtime_env={"py_modules": [parent_directory + "/roytypes"]})
+        ray.init(runtime_env={"py_modules": [root_directory + "/roytypes"]})
         run_bfs(distributed_bfs)
     finally:
         ray.shutdown()

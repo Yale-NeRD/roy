@@ -69,20 +69,9 @@ class RoyCacheDirMSI(RoyCache):
         # we need invalidation if the current state is MODIFIED
         if self._cache_state == CacheState.MODIFIED:
             # Now the invalidation is deprecated and replaced with eviction during lock release
-            assert False, "Invalidation is deprecated. Use eviction instead"
-            # check sharer list
-            sent = 0
-            self._waiting_data_ok.clear()   # clear => we need data now
-            for sharer in self._cache_sharer.keys():
-                if sharer == requester:
-                    continue
-                async_handle = self._cache_sharer[sharer]
-                if async_handle is not None:
-                    async_handle.set()
-                    sent += 1
-            assert sent < 2, "There should be only one sharer for the CacheState.MODIFIED"
-            print(f"Requester {requester[:16]} | Sent invalidation to {sent} sharers", flush=True)
-            await self._waiting_data_ok.wait()
+            assert_msg = "\033[91m** Make sure that all accesses are within lock scope.\n"
+            assert_msg += "Roy Error:: Accessing (potentially) stale data.\033[0m"
+            assert False, assert_msg
 
         # Check the existing sharer and initiate the invalidation
         if permission == CachePermission.WRITE:
@@ -95,7 +84,6 @@ class RoyCacheDirMSI(RoyCache):
 
     async def transition(self, requester, permission: CachePermission):
         # TODO: Raise exception if permission is invalid
-        # self.check_permission(requester, permission)
 
         if permission == CachePermission.READ or permission == CachePermission.WRITE:
             await self.process_fetch(requester, permission)
@@ -161,14 +149,15 @@ class RoyProxy:
     def set_nocache(self, data):
         self._data = data
 
-    async def get(self, requester, permission=CachePermission.WRITE):
+    async def get(self, requester, permission=CachePermission.WRITE, verbose=False):
         if self._cache:
             await self._cache.transition(requester, permission)
         # print the amount of data
-        try:
-            print(f"FETCH: Requester {requester[:16]} | Data size: {len(self._data)}", flush=True)
-        except Exception as e:
-            print(f"Error occurred: {e}", flush=True)
+        if verbose:
+            try:
+                print(f"FETCH: Requester {requester[:16]} | Data size: {len(self._data)}", flush=True)
+            except Exception as e:
+                print(f"Error occurred: {e}", flush=True)
         return self._data
 
     async def set(self, requester, data, permission=CachePermission.EVICT, verbose=False):
@@ -194,11 +183,3 @@ class RoyProxy:
         print(f"RoyProxy {self} is deleted", flush=True)
         if self._cache:
             self._cache._clean_up_()
-
-@ray.remote
-class ActorTest:
-    def __init__(self):
-        pass
-
-    def dummy_call(self):
-        pass

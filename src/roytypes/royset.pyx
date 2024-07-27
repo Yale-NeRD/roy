@@ -6,7 +6,7 @@ from cpython.list cimport PyList_GetItem, PyList_Size
 from cython.parallel import prange
 import ray
 from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
+from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
 from roytypes.roybase cimport RoyBase, RoyChunk
 
 cdef class RoySet(RoyBase):

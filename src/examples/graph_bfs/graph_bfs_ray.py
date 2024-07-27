@@ -1,5 +1,5 @@
 import ray
-import queue    # or import ray.util.queue as queue
+import ray.util.queue as queue
 from graph_bfs_base import run_bfs
 
 @ray.remote
@@ -51,8 +51,6 @@ class Worker:
             self.shared_state.add_nodes_to_queue.remote(neighbors)
 
 def distributed_bfs(graph, start_node, target_value, num_workers=4):
-    ray.init(ignore_reinit_error=True)
-
     # Initialize the shared state actor
     shared_state = SharedState.remote()
 

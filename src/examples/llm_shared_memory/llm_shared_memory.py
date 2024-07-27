@@ -64,7 +64,6 @@ def query_llm(llm_config, prompt):
     if response.status_code != 200:
         err = f"Error: {response.status_code}, {response.text}"
         print(err, flush=True)
-        time.sleep(1)
         return err
 
     # model_response = response.json()['response']  # ollama
@@ -156,7 +155,6 @@ class RayWorker:
         ]
         # print(prompt_from_shared_memory, flush=True)
         model_response = query_llm(self.llm_config, prompt_from_shared_memory)
-        time.sleep(1)
         ray.get(self.shared_state.append.remote(f'Agent {self.id}: ' + model_response))
         return model_response
 

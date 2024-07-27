@@ -5,7 +5,7 @@ from libc.stdlib cimport malloc, free
 from cython.parallel import prange
 import ray
 from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
+from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
 from roytypes.roybase cimport RoyBase, RoyChunk
 
 cdef class ListChunkMeta:
@@ -52,7 +52,7 @@ cdef class RoyList(RoyBase):
             chunked_lists = [value[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
         self.chunk_ref_list = [RoyChunk(RoyProxy.remote(chunk, RoyCacheDirMSI), RoyCacheLocalMSI()) for chunk in chunked_lists]
         self.length = len(value) if value else 0
-        print(f"Initial chunked list: {chunked_lists}")
+        # print(f"Initial chunked list: {chunked_lists}")
 
     def __getitem__(self, int index):
         cdef list chunk_used = self._fetch_chunk_usage_and_length(index)

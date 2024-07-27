@@ -6,7 +6,7 @@ from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
 from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
+from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
 import time
 import asyncio
 from threading import Thread, Lock
@@ -32,7 +32,6 @@ cdef class RoyBase:
     cdef int _last_msg_time
 
     cdef void _init_new_chunk_list_(self, int num_chunks=*, object value=*)
-    cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx, int timeout)
     cdef void _fetch_chunk_(self, int chunk_idx)
     cdef void _evict_chunk_(self, int chunk_idx, int remove_data=*)
     # cdef void _flush_chunks_(self)

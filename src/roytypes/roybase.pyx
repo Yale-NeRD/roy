@@ -6,7 +6,7 @@ from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
 from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI, ActorTest
+from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
 import time
 from asyncio import Event
 import threading
@@ -49,7 +49,7 @@ cdef class RoyChunk:
 cdef class RoyBase:
     # == variables: relocated to .pxd ==
 
-    def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1):
+    def __init__(self, int num_chunks=4, object value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1):
         '''
         @lock: lock object for synchronization. For deserialization, it should be given.
         @chunk_ref_list: list of ray reference to each chunk for deserializing
@@ -60,6 +60,7 @@ cdef class RoyBase:
             raise ValueError("Number of buckets must be greater than 0")
         if not ray.is_initialized():
             print(f"Ray must be initialized to use {self.__class__.__name__}", flush=True)
+            time.sleep(3)
             raise AssertionError(f"Ray must be initialized to use {self.__class__.__name__}")
         self.num_chunks = num_chunks
 
@@ -74,6 +75,7 @@ cdef class RoyBase:
             self.chunk_ref_list = chunk_ref_list
             self.length = length
         else:
+            # Call the subclass method to initialize chunk_ref_list
             self._init_new_chunk_list_(num_chunks, value)
             assert self.chunk_ref_list is not None
 
@@ -129,36 +131,6 @@ cdef class RoyBase:
     cdef void _init_new_chunk_list_(self, int num_chunks=32, object value=None):
         raise NotImplementedError("This method should be implemented in the subclass")
 
-    # Define a function to invalidate the cache
-    cdef void _invalidate_cache(self, object proxy_ref, int chunk_idx, int timeout):
-        print(f"Waiting for invalidation signal for chunk {chunk_idx}", flush=True)
-        while True:
-            try:
-                # wait for the signal that the cache needs to be invalidated
-                ray.get(proxy_ref.install_invalidate_handle.remote(gen_roy_id()), timeout=timeout)
-                # if is_inval_required:
-                # invalidate the cache if it haven't
-                # - it might be already invalidated by _evict_chunk_
-                if self.chunk_list[chunk_idx] is not None:
-                    # print(f"Invalidating cache for chunk {chunk_idx}", flush=True)
-                    self._evict_chunk_(chunk_idx)
-                return
-            except ray.exceptions.GetTimeoutError:
-                print(f"Timeout for invalidation signal for chunk {chunk_idx}... will retry", flush=True)
-                # we do not know if it was the actor has been terminated
-                # or we are simply need to wait longer
-                # so, we will retry and see which error is returned
-            except ray.exceptions.RayActorError as e:
-                # Now the actor is likely terminated
-                return
-            except ray.exceptions.RayTaskError as e:
-                # Now the actor is likely terminated
-                return
-            except Exception as e:
-                # TODO: find a new actor for fault tolerance
-                print(f"Exception for invalidation signal for chunk {chunk_idx}: {e}", flush=True)
-                return
-
     cdef void _fetch_chunk_(self, int chunk_idx):
         # timeout = 3
         # if self._roy_inval_threads[chunk_idx] is not None:
@@ -171,9 +143,6 @@ cdef class RoyBase:
         self.chunk_list[chunk_idx] = ray.get(proxy_ref.get.remote(gen_roy_id()))
         # print(f"Fetched chunk {chunk_idx}", flush=True)
         self._roy_meta.chunk_versions[chunk_idx] += 1
-        # thread = Thread(target=self._invalidate_cache, args=(proxy_ref, chunk_idx, timeout))
-        # thread.start()
-        # self._roy_inval_threads[chunk_idx] = thread
 
     cdef void _evict_chunk_(self, int chunk_idx, int remove_data=False):
         if self.chunk_list[chunk_idx] is None:

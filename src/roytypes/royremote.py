@@ -28,7 +28,8 @@ def remote(cls):
         return False
 
     def flush(self):
-        print(f"Flushing {self.__class__.__name__}")
+        # TODO: logging with Loguru
+        print(f"INFO: manually flushing {self.__class__.__name__}")
         for attr in self._auto_managed_attrs:
             if hasattr(attr, 'flush') and callable(getattr(attr, 'flush')):
                 print(f"* Flushing {attr.__class__.__name__}")
@@ -39,13 +40,3 @@ def remote(cls):
     setattr(cls, '__exit__', __exit__)
     setattr(cls, 'roy_flush', flush)
     return cls
-
-def remote_worker(cls, *args, **kwargs):
-    original_init = cls.__init__
-    def roy_remote_callback_set(self, cache_invalidation_ftn: callable):
-        self._roy_remote_callback = cache_invalidation_ftn
-    setattr(cls, '_roy_remote_callback', None)
-    setattr(cls, '__roy_private__', {'roy_woker': True})
-    setattr(cls, '__roy_remote_callback_set__', roy_remote_callback_set)
-    setattr(cls, '__roy_remote_callback_get__', lambda self: self._roy_remote_callback)
-    return ray.remote(cls, *args, **kwargs)
