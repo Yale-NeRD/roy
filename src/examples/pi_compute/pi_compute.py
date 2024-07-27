@@ -26,9 +26,10 @@ if __name__ == '__main__':
 
     # Print the initial state
     # Note) Expensive operation since it fetches all remote objects to print
-    # with counters as container:
-    #     print("Counters:", container)
-    print("Counters:", counters)
+    with counters as container:
+        print("Counters:", container)
+    # The following will cause error (sometime not immeidately but eventually)
+    # print("Counters:", counters)
 
     # Define function to compute pi
     @ray.remote

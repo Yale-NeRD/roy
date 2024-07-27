@@ -1,6 +1,7 @@
 import ray
 import asyncio
 from enum import Enum
+from typing import Annotated
 
 class CacheState(Enum):
     INVALID = 0
@@ -21,10 +22,11 @@ def gen_roy_id():
 class RoyRequester:
     '''
     Store the requester information
-    @requester: str - ray id or handle of the requester actor
-    @invalidate_handle: asyncio.event - the event to trigger the invalidation
     '''
-    def __init__(self, requester: str, invalidate_handle=None):
+    def __init__(self, 
+        requester: Annotated[str, "ray id or handle of the requester actor"],
+        invalidate_handle: Annotated[asyncio.Event, "the event to trigger the invalidation"]=None
+        ):
         self.requester = requester
         self.invalidate_handle = invalidate_handle
 
