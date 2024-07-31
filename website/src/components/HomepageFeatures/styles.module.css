@@ -9,3 +9,24 @@
   height: 200px;
   width: 200px;
 }
+
+.flexContainer {
+  display: flex;
+  align-items: center;
+}
+
+.flexItem {
+  flex: 1;
+}
+
+.textContainer {
+  display: flex;
+  align-items: center;
+}
+
+.centeringColumn {
+  display: grid;
+  align-items: center;
+  margin-left: auto;
+  margin-right: auto;
+}

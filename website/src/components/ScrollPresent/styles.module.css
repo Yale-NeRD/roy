@@ -1,0 +1,12 @@
+.slide_in_element {
+  align-items: center;
+  opacity: 0;
+  transform: translateX(-30%);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+  min-height: 15vh;
+}
+
+.slide_in_element.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
