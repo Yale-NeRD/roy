@@ -8,15 +8,15 @@ const config: Config = {
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://shsym.github.io/',
+  url: 'https://yale-nerd.github.io/',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/Roy/',
+  baseUrl: '/roy/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'shsym', // Usually your GitHub org/user name.
-  projectName: 'Roy', // Usually your repo name.
+  organizationName: 'yale-nerd', // Usually your GitHub org/user name.
+  projectName: 'roy', // Usually your repo name.
   trailingSlash: false,
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
@@ -117,7 +117,7 @@ const config: Config = {
             // },
             {
               label: 'GitHub',
-              href: 'https://github.com/shsym/Roy',
+              href: 'https://github.com/Yale-NeRD/roy',
             },
           ],
         },
