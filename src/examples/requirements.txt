@@ -1,0 +1,15 @@
+# transformers
+# torch==2.3.0
+# accelerate
+# optimum
+# auto-gptq
+pytest
+maturin
+cloudpickle
+cython
+pybind11
+ray==2.31.0
+# llama-cpp-python
+numpy
+requests
+python-dotenv
