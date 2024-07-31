@@ -1,23 +1,15 @@
-import sys, os, time
+import os, time
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 # Get the API key from environment variables
+# NOTE) place your PERPLEXITY_API_KEY in .env file
+# e.g., PERPLEXITY_API_KEY=your_api_key_start_with_pplx-...
 api_key = os.getenv('PERPLEXITY_API_KEY')
 
-# Add root directory to the sys path
-current_directory = os.path.dirname(os.path.abspath(__file__))
-root_directory = os.path.dirname(os.path.dirname(current_directory))    # ../../
-sys.path.append(root_directory)
-sys.path.append(root_directory + '/roy_on_ray')
-
-import ray  # `pip install ray` for this example
-# from ray.util.queue import Queue
-# We also assume that ollama is installed 
-
+import ray
 import requests
-import json
 
 # We use RoyList as a shared memory across agents
 from roy_on_ray import RoyList, remote
@@ -27,7 +19,7 @@ llm_config = {
     # "model": "llama3",
     # "model": "llama-3-8b-instruct",
     # "model": "llama-3-sonar-small-32k-chat",
-    "model": "llama-3-70b-instruct",
+    "model": "llama-3.1-70b-instruct",
     "system_prompt":
         "# General instructions:\n"
         "- Following your role, write a paragraph referring to the shared memory toward the goal.\n"
@@ -165,7 +157,7 @@ if __name__ == "__main__":
         num_agents = 3
         num_iteration = 3
 
-        ray.init(runtime_env={"py_modules": [root_directory + "/roy_on_ray"]})
+        ray.init()
         if mode == "roy":
             shared_memory = RoyList()
             with shared_memory:

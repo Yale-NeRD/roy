@@ -30,4 +30,4 @@ clean:
 
 # example
 example: build
-	@cd src/examples/pi_compute && python pi_compute.py
+	@cd examples/pi_compute && python pi_compute.py

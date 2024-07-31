@@ -1,22 +1,12 @@
 import random
-import sys
-import os
 import ray
-
-# Add root directory to the sys path
-current_directory = os.path.dirname(os.path.abspath(__file__))
-root_directory = os.path.dirname(os.path.dirname(current_directory))    # ../../
-sys.path.append(root_directory)
-sys.path.append(root_directory + '/roy_on_ray')
-
-from roy_on_ray import RoyDict, remote
-import ray
+from roy_on_ray import RoyDict
 
 if __name__ == '__main__':
     num_tasks = 8
 
     # connect to the server for this process
-    ray.init(runtime_env={"py_modules": [root_directory + "/roy_on_ray"]})
+    ray.init()
 
     # Create a container to store the results
     counters = RoyDict({i: 0 for i in range(num_tasks)}, num_chunks=num_tasks)
