@@ -1,0 +1,9 @@
+*.code-workspace
+.vscode
+
+# python related
+*.pyc
+__pycache__
+*.so
+.DS_store
+

@@ -1,0 +1,5 @@
+pytest
+maturin
+cloudpickle
+cython
+pybind11
