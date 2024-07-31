@@ -1,4 +1,8 @@
 # Roy: a Python library for distributed shared memory
+
+[![Homepage](https://img.shields.io/badge/Homepage-Visit-blue)](https://yale-nerd.github.io/roy/)
+
+
 Roy enables shared memory between multiple processes.
 - Core Roy library is written in Rust.
 
