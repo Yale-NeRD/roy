@@ -2,8 +2,8 @@ import pytest
 import ray
 import time
 
-from test_utils import ray_fresh_start
-from roytypes import RoyList
+from test_utils import *
+from roy_on_ray import RoyList
 
 @pytest.fixture(scope="module", autouse=True)
 def ray_init_shutdown():

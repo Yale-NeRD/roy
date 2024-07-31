@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling", "cython"]
+build-backend = "hatchling.build"
+
+[project]
+name = "roy-on-ray"
+version = "0.0.1"
+authors = [
+  { name="Seung-seob Lee", email="seung-seob.lee@yale.edu" },
+]
+description = "A data structure layer for mutable remote objects on Ray."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/Yale-NeRD/roy"
+Issues = "https://github.com/Yale-NeRD/roy/issues"
+
+[tool.cython]
+source-files = ["src/roy_on_ray/*.pyx", "src/roy_on_ray/*.pxd"]

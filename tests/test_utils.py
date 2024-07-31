@@ -2,11 +2,10 @@ import ray, time
 import sys, os
 
 # Add root directory to the sys path
-current_directory = os.path.dirname(os.path.abspath(__file__))
-parent_directory = os.path.dirname(current_directory)
-sys.path.append(parent_directory)
-sys.path.append(parent_directory + '/cpproy')
-sys.path.append(parent_directory + '/roytypes')
+# current_directory = os.path.dirname(os.path.abspath(__file__))
+# parent_directory = os.path.dirname(current_directory)
+# sys.path.append(parent_directory)
+# sys.path.append(parent_directory + '/src/')
 
 def ray_fresh_start():
     retry_count = 0
@@ -20,7 +19,10 @@ def ray_fresh_start():
             print("Ray did not shutdown properly. Exiting...")
             ray.shutdown()
 
-    ray.init(runtime_env={"py_modules": [parent_directory + "/roytypes"]})
+    ray.init()
+    from roy_on_ray.royset import RoySet
+    test_set = RoySet()
+    print(f"Roy on Ray is initialized {test_set}", flush=True) 
 
 def ray_shutdown():
     ray.shutdown()

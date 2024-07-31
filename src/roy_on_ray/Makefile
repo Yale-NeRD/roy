@@ -1,7 +1,7 @@
 all:
 	@python setup.py build_ext --inplace
-	@mv roytypes/*.so .
-	@rm -rf roytypes
+	@mv roy_on_ray/*.so .
+	@rm -rf roy_on_ray
 
 clean:
 	@rm -rf build

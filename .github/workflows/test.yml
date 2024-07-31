@@ -36,19 +36,7 @@ jobs:
       shell: bash -l {0}
       run: |
         conda activate myenv
-        pip install -r src/roytypes/requirements.txt
-
-    - name: Set up Rust ${{ matrix.rust-version }}
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: ${{ matrix.rust-version }}
-        profile: minimal
-        override: true
-
-    - name: Install Rust dependencies
-      run: |
-        rustup component add clippy
-        cargo install cargo-audit
+        pip install -r src/roy_on_ray/requirements.txt
 
     - name: Install additional Python dependencies
       shell: bash -l {0}
@@ -64,8 +52,9 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Test with pytest
+    - name: Install the package and test with pytest
       shell: bash -l {0}
       run: |
         conda activate myenv
+        make install
         make test

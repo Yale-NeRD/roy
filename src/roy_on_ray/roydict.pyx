@@ -4,9 +4,9 @@ from cpython.list cimport PyList_GetItem, PyList_Size
 from libc.stdlib cimport malloc, free
 from cython.parallel import prange
 import ray
-from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
-from roytypes.roybase cimport RoyBase, RoyChunk
+from roy_on_ray.roylock import RoyLock
+from roy_on_ray.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
+from roy_on_ray.roybase cimport RoyBase, RoyChunk
 import time
 
 cdef class RoyDict(RoyBase):

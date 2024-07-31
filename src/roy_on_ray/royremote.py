@@ -1,5 +1,4 @@
 from functools import wraps
-import ray
 def remote(cls):
     original_init = cls.__init__
 

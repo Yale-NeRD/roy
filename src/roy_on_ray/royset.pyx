@@ -5,9 +5,9 @@ from cpython.list cimport PyList_GetItem, PyList_Size
 # from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
-from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
-from roytypes.roybase cimport RoyBase, RoyChunk
+from roy_on_ray.roylock import RoyLock
+from roy_on_ray.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
+from roy_on_ray.roybase cimport RoyBase, RoyChunk
 
 cdef class RoySet(RoyBase):
     def __init__(self, int num_chunks=32, list value=None, object lock=None, int per_chunk_lock=0, list chunk_ref_list=None, object meta_ref=None, int length=-1):

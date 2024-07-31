@@ -5,8 +5,8 @@ from libc.stdlib cimport malloc, free
 from libc.time cimport clock, CLOCKS_PER_SEC
 from cython.parallel import prange
 import ray
-from roytypes.roylock import RoyLock
-from roytypes.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
+from roy_on_ray.roylock import RoyLock
+from roy_on_ray.royproxy import RoyProxy, gen_roy_id, RoyCacheLocalMSI, RoyCacheDirMSI
 import time
 from asyncio import Event
 import threading

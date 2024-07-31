@@ -2,10 +2,11 @@
 Roy enables shared memory between multiple processes.
 - Core Roy library is written in Rust.
 
-## How to run
+## How to run a simple example
 ```bash
-make
+make example
 ```
+The source code is located at [`src/examples/pi_compute/pi_compute.py`](https://github.com/Yale-NeRD/roy/blob/main/src/examples/pi_compute/pi_compute.py).
 
 ## Tests
 ```bash

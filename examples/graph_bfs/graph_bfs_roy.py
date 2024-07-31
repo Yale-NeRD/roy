@@ -6,10 +6,9 @@ import os
 current_directory = os.path.dirname(os.path.abspath(__file__))
 root_directory = os.path.dirname(os.path.dirname(current_directory))    # ../../
 sys.path.append(root_directory)
-sys.path.append(root_directory + '/cpproy')
-sys.path.append(root_directory + '/roytypes')
+sys.path.append(root_directory + '/roy_on_ray')
 
-from roytypes import RoySet, RoyList, remote
+from roy_on_ray import RoySet, RoyList, remote
 
 import ray
 from graph_bfs_base import run_bfs
@@ -105,7 +104,7 @@ def distributed_bfs(graph, start_node, target_value, num_workers=4):
 # Example usage
 if __name__ == "__main__":
     try:
-        ray.init(runtime_env={"py_modules": [root_directory + "/roytypes"]})
+        ray.init(runtime_env={"py_modules": [root_directory + "/roy_on_ray"]})
         run_bfs(distributed_bfs)
     finally:
         ray.shutdown()

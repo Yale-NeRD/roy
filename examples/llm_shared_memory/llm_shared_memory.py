@@ -10,8 +10,7 @@ api_key = os.getenv('PERPLEXITY_API_KEY')
 current_directory = os.path.dirname(os.path.abspath(__file__))
 root_directory = os.path.dirname(os.path.dirname(current_directory))    # ../../
 sys.path.append(root_directory)
-sys.path.append(root_directory + '/cpproy')
-sys.path.append(root_directory + '/roytypes')
+sys.path.append(root_directory + '/roy_on_ray')
 
 import ray  # `pip install ray` for this example
 # from ray.util.queue import Queue
@@ -21,7 +20,7 @@ import requests
 import json
 
 # We use RoyList as a shared memory across agents
-from roytypes import RoyList, remote
+from roy_on_ray import RoyList, remote
 
 # llm_config structure
 llm_config = {
@@ -166,7 +165,7 @@ if __name__ == "__main__":
         num_agents = 3
         num_iteration = 3
 
-        ray.init(runtime_env={"py_modules": [root_directory + "/roytypes"]})
+        ray.init(runtime_env={"py_modules": [root_directory + "/roy_on_ray"]})
         if mode == "roy":
             shared_memory = RoyList()
             with shared_memory:
