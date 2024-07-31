@@ -40,6 +40,9 @@ include = [
     "src/roy_on_ray/Makefile",
 ]
 
+[tool.cython]
+source-files = ["src/roy_on_ray/*.pyx", "src/roy_on_ray/*.pxd"]
+
 [tool.hatch.build.hooks.custom]
 hooks = ["hatch_build"]
 
