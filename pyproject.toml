@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "cython"]
+requires = ["hatchling", "cython", "setuptools"]
 build-backend = "hatchling.build"
 
 [project]
@@ -23,3 +23,6 @@ Issues = "https://github.com/Yale-NeRD/roy/issues"
 
 [tool.cython]
 source-files = ["src/roy_on_ray/*.pyx", "src/roy_on_ray/*.pxd"]
+
+[tool.hatch.build.hooks.custom]
+hooks = ["hatch_build"]
