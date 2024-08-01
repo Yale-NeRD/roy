@@ -25,8 +25,8 @@ jobs:
       run: |
         docker run --rm -v $(pwd):/io quay.io/pypa/manylinux2014_x86_64 /bin/bash -c "
           cd /io && 
-          /opt/python/cp311/bin/pip install -U pip wheel setuptools &&
-          /opt/python/cp311/bin/python -m build &&
+          /opt/python/cp311-cp311/bin/pip install -U pip wheel setuptools &&
+          /opt/python/cp311-cp311/bin/python -m build &&
           auditwheel repair dist/*.whl
         "
     - name: Store the distribution packages
