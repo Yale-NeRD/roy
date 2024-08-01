@@ -3,15 +3,14 @@
 [![Homepage](https://img.shields.io/badge/Homepage-Visit-blue)](https://yale-nerd.github.io/roy/)
 
 
-Roy enables shared memory between multiple processes.
-- Core Roy library is written in Rust.
+Roy enables mutable remote objects on Ray. Please check out our [homepage](https://yale-nerd.github.io/roy/) for more information.
 
 ## How to run a simple example
-First, install the Roy library (recommended to use a virtual environment). This will install the Roy library in _editable_ mode (`pip install` with `-e` flag).
+1) Install the Roy library.
 ```bash
-make install
+pip install roy-on-ray
 ```
-Then run the example.
+2) Run the example.
 ```bash
 make example
 ```
