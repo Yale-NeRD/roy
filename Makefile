@@ -2,32 +2,28 @@
 
 build: build_pyx pydep
 
-build_pypi: build
-	@python3 -m build
-
-test: build
+test:
 	@python -m pytest -v tests/*.py
 
 test_debug: build
 	@python -m pytest -v src/tests/roy_set_single.py
 
-test_py: build_py pydep
-	@cd src/pyroy && python -m pytest -v
-
 pydep:
 	@pip install -r src/roy_on_ray/requirements.txt
 
 build_pyx:
-	@cd src/roy_on_ray && make
+	@python3 -m build
 
 install: build
-	@pip install -e .
+	@pip install dist/*.whl
 
 # clean rust and pycache
 clean:
-	@cd src/roy_on_ray && make clean
+	@rm -rf src/roy_on_ray/build
+	@rm -rf dist build
+	@cd src/roy_on_ray && rm -rf *.so *.c
 	@find . -type d -name __pycache__ -exec rm -r {} \+
 
 # example
-example: build
+example:
 	@cd examples/pi_compute && python pi_compute.py
