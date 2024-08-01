@@ -18,6 +18,12 @@ You can check the status as follows in the terminal:
 ray status
 ```
 
+We also assume that you already installed the `roy-on-ray` package. If not, please install it via pip:
+
+```bash
+pip install roy-on-ray
+```
+
 :::
 
 ## Simple distributed counter example (to compute π)
