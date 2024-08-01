@@ -4,3 +4,5 @@ cloudpickle
 cython
 pybind11
 ray==2.31.0
+setuptools
+build
