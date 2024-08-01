@@ -33,9 +33,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: python-package-distributions
-        path: dist/wheelhouse/
+        path: wheelhouse/
     - name: Print uploaded artifacts
-      run: ls -l dist/wheelhouse/
+      run: ls -l wheelhouse/
 
   publish-to-pypi:
     name: >-
